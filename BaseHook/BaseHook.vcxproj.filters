@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="deps">
+      <UniqueIdentifier>{16541304-411a-471d-910f-901d830b6911}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="deps\kiero">
+      <UniqueIdentifier>{17387f3b-5309-4c13-8869-7c3858169623}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="deps\kiero\minhook">
+      <UniqueIdentifier>{40011a61-3a83-42d8-9777-3801452243d9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="deps\kiero\minhook\src">
+      <UniqueIdentifier>{96173429-477d-4b95-888e-4f7f2b1848b8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="deps\kiero\minhook\include">
+      <UniqueIdentifier>{21966952-4752-421b-8521-4b130a0d6350}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="deps\kiero\minhook\src\hde">
+      <UniqueIdentifier>{79a3203f-42e3-490b-852c-4f7807090b8f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\hooks">
+      <UniqueIdentifier>{22763f03-6889-4b68-8092-23f2f842323f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\base.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\pch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="deps\kiero\kiero.h">
+      <Filter>deps\kiero</Filter>
+    </ClInclude>
+    <ClInclude Include="deps\kiero\minhook\include\MinHook.h">
+      <Filter>deps\kiero\minhook\include</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\base.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\pch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hooks\hooks.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hooks\DX9_Hooks.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hooks\DX10_Hooks.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hooks\DX11_Hooks.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hooks\WndProc.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\kiero\kiero.cpp">
+      <Filter>deps\kiero</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\kiero\minhook\src\buffer.c">
+      <Filter>deps\kiero\minhook\src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\kiero\minhook\src\hook.c">
+      <Filter>deps\kiero\minhook\src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\kiero\minhook\src\trampoline.c">
+      <Filter>deps\kiero\minhook\src</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\kiero\minhook\src\hde\hde32.c">
+      <Filter>deps\kiero\minhook\src\hde</Filter>
+    </ClCompile>
+    <ClCompile Include="deps\kiero\minhook\src\hde\hde64.c">
+      <Filter>deps\kiero\minhook\src\hde</Filter>
+    </ClCompile>
+    <ClCompile Include="src/hooks/DirectInput8.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="src/hooks/XInput.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

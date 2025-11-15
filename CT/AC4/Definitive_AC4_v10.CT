@@ -3662,11 +3662,11 @@ jmp pause
 returnhere:
 
 
-alloc(disable_air_trackle,2048)
+alloc(disable_air_tackle,2048)
 label(returnhere2)
 label(exit2)
 
-disable_air_trackle:
+disable_air_tackle:
 cmp byte ptr [parkour_mode_enable],01
 je AC4BFSP.exe+1678DA7
 test dl,01
@@ -3676,7 +3676,7 @@ exit2:
 jmp returnhere2
 
 "AC4BFSP.exe"+1678D8B:
-jmp disable_air_trackle
+jmp disable_air_tackle
 returnhere2:
 
 
@@ -3784,7 +3784,7 @@ db 74 48 8B 43 08
 //mov eax,[ebx+08]
 
 dealloc(pause)
-dealloc(disable_air_trackle)
+dealloc(disable_air_tackle)
 dealloc(disable_ingame_binds)
 dealloc(disable_combat_grab)
 dealloc(disable_drop_to_hang)
@@ -3876,6 +3876,7 @@ globalalloc(vault_to_fall_f,1)
 globalalloc(vault_to_breakout_f,1)
 globalalloc(vault_inner_ledge_to_hang_coords,16)
 globalalloc(player_rotation,16)
+globalalloc(wallrun_height,4)
 
 vault_inner_ledge_f:
 db 00
@@ -3885,6 +3886,9 @@ db 0A
 
 vault_pass_counter:
 db 00
+
+wallrun_height:
+dd (float)-0.25
 
 vault:
 movss xmm0,[ebp-00000110]

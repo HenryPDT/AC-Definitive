@@ -3882,6 +3882,7 @@ globalalloc(vault_to_fall_f,1)
 globalalloc(vault_to_breakout_f,1)
 globalalloc(vault_inner_ledge_to_hang_coords,16)
 globalalloc(player_rotation,16)
+globalalloc(wallrun_height,4)
 
 vault_inner_ledge_f:
 db 00
@@ -3891,6 +3892,9 @@ db 0A
 
 vault_pass_counter:
 db 00
+
+wallrun_height:
+dd (float)-0.25
 
 vault:
 fstp dword ptr [ebp-30]
