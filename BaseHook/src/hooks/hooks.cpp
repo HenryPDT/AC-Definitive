@@ -10,12 +10,32 @@ namespace BaseHook
 
         namespace
         {
+            const char* RenderTypeToString(kiero::RenderType::Enum type)
+            {
+                switch (type)
+                {
+                case kiero::RenderType::D3D9:   return "D3D9";
+                case kiero::RenderType::D3D10:  return "D3D10";
+                case kiero::RenderType::D3D11:  return "D3D11";
+                default:                        return "Unsupported";
+                }
+            }
+
             BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam)
             {
                 DWORD wndProcId;
                 GetWindowThreadProcessId(handle, &wndProcId);
 
-                if (GetCurrentProcessId() != wndProcId || !IsWindowVisible(handle))
+                if (GetCurrentProcessId() != wndProcId)
+                    return TRUE;
+
+                // Ignore console windows
+                char className[256];
+                GetClassNameA(handle, className, sizeof(className));
+                if (strcmp(className, "ConsoleWindowClass") == 0) 
+                    return TRUE;
+
+                if (!IsWindowVisible(handle))
                     return TRUE;
 
                 Data::hWindow = handle;
@@ -32,56 +52,41 @@ namespace BaseHook
 
         bool Init()
         {
-            kiero::RenderType::Enum forcedType = kiero::RenderType::None; // Set to None for auto-detection
-            kiero::RenderType::Enum type;
-
-            if (forcedType != kiero::RenderType::None)
+            // CRITICAL FIX: Initialize MinHook explicitly before creating any input hooks.
+            // Kiero initializes it too, but we need it earlier for input.
+            if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED)
             {
-                // Use forced type for testing
-                if (kiero::init(forcedType) != kiero::Status::Success)
-                {
-                    LOG_ERROR("Failed to initialize forced DirectX version");
-                    return false;
-                }
-                type = forcedType;
-            }
-            else
-            {
-                // Use kiero's automatic detection to determine which DirectX version to hook
-                if (kiero::init(kiero::RenderType::Auto) != kiero::Status::Success)
-                {
-                    LOG_ERROR("Kiero initialization failed - No supported D3D version found.");
-                    return false;
-                }
-                type = kiero::getRenderType();
-            }
-
-            switch (type)
-            {
-            case kiero::RenderType::D3D11:
-                LOG_INFO("Hooked D3D11");
-                break;
-            case kiero::RenderType::D3D10:
-                LOG_INFO("Hooked D3D10");
-                break;
-            case kiero::RenderType::D3D9:
-                LOG_INFO("Hooked D3D9");
-                break;
-            default:
-                LOG_ERROR("Unsupported render type detected");
+                LOG_ERROR("Failed to initialize MinHook.");
                 return false;
             }
 
-            // Hook DirectInput as early as possible, before the game window is even created.
+            // 1. Hook Inputs early
+            // Now safe to call because MinHook is initialized.
             InitDirectInput();
             InitXInput();
 
+            // 2. Initialize Kiero
+            if (kiero::init(kiero::RenderType::Auto) != kiero::Status::Success)
+            {
+                LOG_ERROR("Kiero initialization failed.");
+                return false;
+            }
+
+            kiero::RenderType::Enum type = kiero::getRenderType();
+            LOG_INFO("Render Type: %s (%d)", RenderTypeToString(type), type);
+
+            // 3. Find Window
+            int attempts = 0;
             while (FindGameWindow() == NULL)
             {
                 Sleep(100);
+                if (++attempts > 100) { // 10 second timeout
+                    LOG_ERROR("Timeout waiting for game window.");
+                    return false;
+                }
             }
 
-            // Now that we have a window, we can hook the detected DirectX version and subclass the window.
+            // 4. Bind Graphics Hooks
             if (type == kiero::RenderType::D3D11) {
                 kiero::bind(8, (void**)&Data::oPresent, hkPresentDX11);
                 kiero::bind(13, (void**)&Data::oResizeBuffers, hkResizeBuffersDX11);
@@ -90,24 +95,38 @@ namespace BaseHook
                 kiero::bind(8, (void**)&Data::oPresent, hkPresentDX10);
                 kiero::bind(13, (void**)&Data::oResizeBuffers, hkResizeBuffersDX10);
             }
-            else {
-                // D3D9
+            else if (type == kiero::RenderType::D3D9) {
                 kiero::bind(42, (void**)&Data::oEndScene, hkEndScene);
                 kiero::bind(16, (void**)&Data::oReset, hkReset);
             }
+            else {
+                LOG_ERROR("Unsupported render type.");
+                return false;
+            }
 
-            Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
+            // 5. Hook WndProc last
+            if (Data::hWindow) {
+                 Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
+                 LOG_INFO("WndProc Hooked. Original: %p", Data::oWndProc);
+            }
+
             return true;
+        }
+
+        void RestoreWndProc()
+        {
+            if (Data::oWndProc && Data::hWindow)
+            {
+                SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::oWndProc);
+                Data::oWndProc = nullptr; // Prevent double restore
+                LOG_INFO("WndProc Restored.");
+            }
         }
 
         void Shutdown()
         {
-            if (Data::oWndProc)
-                SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::oWndProc);
-
-            // kiero::shutdown() will disable all hooks and uninitialize MinHook.
-            // This includes the DirectInput hooks.
-            kiero::shutdown();
+            // Ensure WndProc is restored if Shutdown called directly
+            RestoreWndProc();
 
             if (ImGui::GetCurrentContext())
             {
@@ -130,6 +149,9 @@ namespace BaseHook
                 ImGui_ImplWin32_Shutdown();
                 ImGui::DestroyContext();
             }
+
+            // Unhook Graphics
+            kiero::shutdown();
         }
     }
 }

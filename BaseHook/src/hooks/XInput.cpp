@@ -27,7 +27,7 @@ namespace BaseHook { namespace Hooks {
         LOG_INFO("XInput: Initializing hooks...");
 
         // Try to find loaded XInput module first
-        const char* names[] = { "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll" };
+        const char* names[] = { "xinput1_4.dll", "xinput9_1_0.dll", "xinput1_3.dll" };
         HMODULE hXInput = nullptr;
         
         for (const char* name : names) {

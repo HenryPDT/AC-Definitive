@@ -7,8 +7,10 @@
 // Portable helpers
 static int Stricmp(const char* s1, const char* s2) { int d; while ((d = toupper(*s2) - toupper(*s1)) == 0 && *s1) { s1++; s2++; } return d; }
 static int Strnicmp(const char* s1, const char* s2, int n) { int d = 0; while (n > 0 && (d = toupper(*s2) - toupper(*s1)) == 0 && *s1) { s1++; s2++; n--; } return d; }
-static char* Strdup(const char* s) { size_t len = strlen(s) + 1; void* buf = malloc(len); IM_ASSERT(buf); return (char*)memcpy(buf, (const void*)s, len); }
 static void Strtrim(char* s) { char* str_end = s + strlen(s); while (str_end > s && str_end[-1] == ' ') str_end--; *str_end = 0; }
+
+// Limit log size to prevent memory exhaustion
+static const int MAX_LOG_SIZE = 2000;
 
 ImGuiConsole::ImGuiConsole()
 {
@@ -26,22 +28,36 @@ ImGuiConsole::ImGuiConsole()
 ImGuiConsole::~ImGuiConsole()
 {
     ClearLog();
-    for (int i = 0; i < m_History.Size; i++)
-        free(m_History[i]);
+    // m_History and m_Items clean themselves up (std::vector/deque of strings)
 }
 
 void ImGuiConsole::ClearLog()
 {
-    std::lock_guard lock(m_Mutex);
-    for (int i = 0; i < m_Items.Size; i++)
-        free(m_Items[i]);
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     m_Items.clear();
 }
 
 void ImGuiConsole::AddLog(const char* s)
 {
-    std::lock_guard lock(m_Mutex);
-    m_Items.push_back(Strdup(s));
+    // Pre-calculate metadata to avoid processing in Draw
+    LogItem item;
+    item.text = s;
+
+    if (strstr(s, "[ERROR]")) item.level = 2;
+    else if (strstr(s, "[WARN]")) item.level = 1;
+    else item.level = 0;
+
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+    m_Items.push_back(std::move(item));
+
+    // Trim log if too big
+    if (m_Items.size() > MAX_LOG_SIZE)
+    {
+        m_Items.pop_front();
+    }
+
+    if (m_AutoScroll)
+        m_ScrollToBottom = true;
 }
 
 void ImGuiConsole::AddLogF(const char* fmt, ...)
@@ -60,13 +76,12 @@ void ImGuiConsole::ExecCommand(const char* command_line)
     AddLogF("> %s", command_line);
     m_HistoryPos = -1;
     for (int i = m_History.Size - 1; i >= 0; i--)
-        if (Stricmp(m_History[i], command_line) == 0)
+        if (Stricmp(m_History[i].c_str(), command_line) == 0)
         {
-            free(m_History[i]);
             m_History.erase(m_History.begin() + i);
             break;
         }
-    m_History.push_back(Strdup(command_line));
+    m_History.push_back(command_line);
 
     if (Stricmp(command_line, "CLEAR") == 0)
     {
@@ -80,7 +95,7 @@ void ImGuiConsole::ExecCommand(const char* command_line)
     {
         int first = m_History.Size - 10;
         for (int i = first > 0 ? first : 0; i < m_History.Size; i++)
-            AddLog(m_History[i]);
+            AddLog(m_History[i].c_str());
     }
     else
     {
@@ -138,7 +153,7 @@ int ImGuiConsole::TextEditCallback(ImGuiInputTextCallbackData* data)
         }
         if (prev_history_pos != m_HistoryPos)
         {
-            const char* history_str = (m_HistoryPos >= 0) ? m_History[m_HistoryPos] : "";
+            const char* history_str = (m_HistoryPos >= 0) ? m_History[m_HistoryPos].c_str() : "";
             data->DeleteChars(0, data->BufTextLen);
             data->InsertChars(0, history_str);
         }
@@ -179,18 +194,26 @@ void ImGuiConsole::Draw(const char* title)
         }
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1));
-        std::lock_guard lock(m_Mutex);
-        for (int i = 0; i < m_Items.Size; i++)
+
+        // Use clipper for performance optimization with large logs
+        ImGuiListClipper clipper;
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+        clipper.Begin((int)m_Items.size());
+
+        while (clipper.Step())
         {
-            const char* item = m_Items[i];
-            ImVec4 color;
-            bool has_color = false;
-            if (strstr(item, "[ERROR]")) { color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f); has_color = true; }
-            else if (strstr(item, "[WARN]")) { color = ImVec4(1.0f, 0.8f, 0.6f, 1.0f); has_color = true; }
-            if (has_color) ImGui::PushStyleColor(ImGuiCol_Text, color);
-            ImGui::TextUnformatted(item);
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) m_SingleLineToCopy = item;
-            if (has_color) ImGui::PopStyleColor();
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+            {
+                const auto& item = m_Items[i];
+                ImVec4 color;
+                bool has_color = false;
+                if (item.level == 2) { color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f); has_color = true; } // Error
+                else if (item.level == 1) { color = ImVec4(1.0f, 0.8f, 0.6f, 1.0f); has_color = true; } // Warn
+                if (has_color) ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextUnformatted(item.text.c_str());
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) m_SingleLineToCopy = item.text;
+                if (has_color) ImGui::PopStyleColor();
+            }
         }
 
         if (m_ScrollToBottom || (m_AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()))

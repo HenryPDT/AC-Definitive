@@ -12,14 +12,13 @@ namespace BaseHook
 
             if (params.hFocusWindow && params.hFocusWindow != Data::hWindow)
             {
-                LOG_INFO("Window mismatch detected (Hooked: %p, D3D: %p). Re-hooking WndProc.", Data::hWindow, params.hFocusWindow);
-                if (Data::hWindow && Data::oWndProc) SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::oWndProc);
+                RestoreWndProc(); // Safely unhook old window first
                 Data::hWindow = params.hFocusWindow;
                 Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
             }
 
             InitImGuiStyle();
-            ImGui_ImplWin32_Init(params.hFocusWindow);
+            ImGui_ImplWin32_Init(Data::hWindow);
             ImGui_ImplDX9_Init(pDevice);
         }
 
@@ -37,33 +36,46 @@ namespace BaseHook
                 Data::bIsInitialized = true;
             }
 
+            Data::bIsRendering = true;
+            Hooks::ApplyBufferedInput(); // Apply thread-safe input
             ImGui_ImplDX9_NewFrame();
             ImGui_ImplWin32_NewFrame();
             ImGui::NewFrame();
 
-            ImGuiLayer_EvenWhenMenuIsClosed();
-            if (Data::bShowMenu)
+            ImGui::GetIO().MouseDrawCursor = Data::bShowMenu;
+
+            if (Data::pSettings)
             {
-                ImGuiLayer_WhenMenuIsOpen();
+                Data::pSettings->DrawOverlay();
+                if (Data::bShowMenu)
+                    Data::pSettings->DrawMenu();
             }
 
             ImGui::EndFrame();
             ImGui::Render();
+            
+            // DX9 saves state internally in ImGui_ImplDX9 usually, but 
+            // user app should be careful about state blocks. 
+            // Standard ImGui_ImplDX9 is usually robust enough for EndScene.
             ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+            
+            Data::bIsRendering = false;
 
             return Data::oEndScene(pDevice);
         }
 
         HRESULT __stdcall hkReset(LPDIRECT3DDEVICE9 pDevice, D3DPRESENT_PARAMETERS* pPresentationParameters)
         {
+            // Invalidate BEFORE calling original Reset
             if (Data::bIsInitialized)
                 ImGui_ImplDX9_InvalidateDeviceObjects();
+                
             HRESULT hr = Data::oReset(pDevice, pPresentationParameters);
-            if (hr >= 0)
-            {
-                if (Data::bIsInitialized)
-                    ImGui_ImplDX9_CreateDeviceObjects();
-            }
+            
+            // Restore AFTER calling original Reset
+            if (SUCCEEDED(hr) && Data::bIsInitialized)
+                ImGui_ImplDX9_CreateDeviceObjects();
+                
             return hr;
         }
     }

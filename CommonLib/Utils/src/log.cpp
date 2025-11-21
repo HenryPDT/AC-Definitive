@@ -3,7 +3,6 @@
 #include <mutex>
 #include <chrono>
 #include <iomanip>
-#include <sstream>
 #include <cstdarg>
 #include <filesystem>
 #include <vector>
@@ -17,8 +16,8 @@ namespace
 
 	std::filesystem::path get_log_path(HMODULE hModule)
 	{
-		char module_path[MAX_PATH];
-		GetModuleFileNameA(hModule, module_path, sizeof(module_path));
+		wchar_t module_path[MAX_PATH];
+		GetModuleFileNameW(hModule, module_path, MAX_PATH);
 		std::filesystem::path dll_path = module_path;
 		return dll_path.parent_path() / "PluginLoader.log";
 	}
@@ -71,34 +70,40 @@ void Log::RemoveSink(LogSink sink)
 
 void Log::Write(const char* fmt, ...)
 {
-	std::lock_guard<std::recursive_mutex> lock(log_mutex);
-	
 	char buffer[4096];
+	char time_buf[64];
+	
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buffer, sizeof(buffer), fmt, args);
 	va_end(args);
 
+	// Format time
 	auto now = std::chrono::system_clock::now();
 	auto time_t_now = std::chrono::system_clock::to_time_t(now);
 	std::tm tm_now;
 	localtime_s(&tm_now, &time_t_now);
+	std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_now);
 
-	std::stringstream ss;
-	ss << "[" << std::put_time(&tm_now, "%Y-%m-%d %H:%M:%S") << "] ";
-	ss << "[TID:0x" << std::hex << GetCurrentThreadId() << std::dec << "] ";
-	ss << buffer;
+	// Combine into final string
+	char final_log_line[4200];
+	snprintf(final_log_line, sizeof(final_log_line), "[%s] [TID:0x%X] %s", time_buf, GetCurrentThreadId(), buffer);
 
-	std::string final_log_line = ss.str();
+	std::vector<Log::LogSink> sinks_copy;
 
-	if (log_file.is_open())
 	{
-		log_file << final_log_line << std::endl;
-		log_file.flush();
+		std::lock_guard<std::recursive_mutex> lock(log_mutex);
+		if (log_file.is_open())
+		{
+			log_file << final_log_line << "\n"; // \n is faster than endl (no forced flush)
+		}
+		// Copy sinks to avoid calling them while holding the lock (prevents deadlocks)
+		sinks_copy = sinks;
 	}
 
-	for (const auto& sink : sinks)
+	// Dispatch to sinks
+	for (const auto& sink : sinks_copy)
 	{
-		sink(final_log_line.c_str());
+		sink(final_log_line);
 	}
 }

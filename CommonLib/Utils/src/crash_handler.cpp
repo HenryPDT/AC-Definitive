@@ -74,9 +74,6 @@ namespace
 		Log::Write("                          CALL STACK                            ");
 		Log::Write("----------------------------------------------------------------");
 
-		HANDLE hProcess = GetCurrentProcess();
-		SymInitialize(hProcess, NULL, TRUE);
-
 		CONTEXT* context = pExceptionPointers->ContextRecord;
 		STACKFRAME64 stackFrame = {};
 #ifdef _WIN64
@@ -97,6 +94,7 @@ namespace
 		DWORD machineType = IMAGE_FILE_MACHINE_I386;
 #endif
 		HANDLE hThread = GetCurrentThread();
+		HANDLE hProcess = GetCurrentProcess();
 
 		char symbolBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
 		PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)symbolBuffer;
@@ -123,8 +121,6 @@ namespace
 			Log::Write("%s", line);
 		}
 
-		SymCleanup(hProcess);
-
 		Log::Write("================================================================");
 		Log::Flush(); // Ensure log is written
 
@@ -134,6 +130,9 @@ namespace
 
 void CrashHandler::Init()
 {
+	// Initialize symbols upfront to avoid memory allocation during a crash
+	SymInitialize(GetCurrentProcess(), NULL, TRUE);
+
 	// Vectored handler for first/second-chance exceptions.
 	AddVectoredExceptionHandler(1, VectoredExceptionHandler);
 
@@ -141,3 +140,7 @@ void CrashHandler::Init()
 	SetUnhandledExceptionFilter(UnhandledExceptionHandler);
 }
 
+void CrashHandler::Shutdown()
+{
+	SymCleanup(GetCurrentProcess());
+}

@@ -1,14 +1,12 @@
 #pragma once
 #include <Windows.h>
 #include <cstdint>
-#include <filesystem>
-#include <string_view>
 
 // Forward declare ImGui context to avoid including imgui.h in this public header.
 struct ImGuiContext;
 
 #define MAKE_PLUGIN_API_VERSION(major, minor) ((major << 16) | minor)
-constexpr uint32_t g_PluginLoaderAPIVersion = MAKE_PLUGIN_API_VERSION(1, 2);
+constexpr uint32_t g_PluginLoaderAPIVersion = MAKE_PLUGIN_API_VERSION(1, 0);
 
 // Game identifiers
 enum class Game
@@ -35,7 +33,7 @@ class IPlugin
 {
 public:
     virtual ~IPlugin() = default;
-    virtual std::string_view GetPluginName() = 0;
+    virtual const char* GetPluginName() = 0;
     virtual uint32_t GetPluginVersion() = 0;
     virtual uint32_t GetPluginAPIVersion() { return g_PluginLoaderAPIVersion; }
 
@@ -60,8 +58,9 @@ public:
     void (*LogToConsole)(const char* text) = nullptr;
     void (*LogToFile)(const char* fmt, ...) = nullptr;
     ImGuiContext* m_ImGuiContext = nullptr;
+    ImGuiContext* (*GetImGuiContext)() = nullptr;
 };
 
 // Each plugin must export this function. It should return a new instance of your plugin's main class.
 using PluginEntrypoint = IPlugin* (*)();
-extern "C" __declspec(dllexport) IPlugin* PluginEntry();
+extern "C" __declspec(dllexport) IPlugin* PluginEntry();

@@ -11,7 +11,7 @@ namespace
 class ACBParkourMod : public IPlugin
 {
 public:
-    std::string_view GetPluginName() override { return "ACB Parkour Mod"; }
+    const char* GetPluginName() override { return "ACB Parkour Mod"; }
     uint32_t GetPluginVersion() override { return MAKE_PLUGIN_API_VERSION(0, 1); }
 
     void OnPluginInit(const PluginLoaderInterface& loader_interface) override

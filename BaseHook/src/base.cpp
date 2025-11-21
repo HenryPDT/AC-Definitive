@@ -10,8 +10,9 @@ namespace BaseHook
         HWND              hWindow = NULL;
         bool              bShowMenu = false;
         bool              bIsInitialized = false;
-        bool              bIsDetached = false;
+        std::atomic<bool> bIsDetached = false;
         bool              bBlockInput = false;
+        std::atomic<bool> bIsRendering = false;
         Settings*         pSettings = nullptr;
         WndProc_t         oWndProc = nullptr;
 
@@ -42,21 +43,46 @@ namespace BaseHook
     {
         bool Init();
         void Shutdown();
+        void RestoreWndProc(); // Helper to restore WndProc separately
     }
 
-    void Start(Settings& settings)
+    void Start(Settings* settings)
     {
-        Data::pSettings = &settings;
-        settings.OnActivate();
+        if (!settings) return;
+        Data::pSettings = settings;
+        Data::pSettings->OnActivate();
         Hooks::Init();
+    }
+
+    Settings* GetSettings() {
+        return Data::pSettings;
     }
 
     bool Detach()
     {
+        if (Data::bIsDetached) return true;
+        
+        LOG_INFO("Detaching...");
         Data::bIsDetached = true;
-        Data::pSettings->OnDetach();
-        Sleep(100); // Allow render thread to finish current frame before destroying hooks/context
+        
+        // 1. Notify user code
+        if (Data::pSettings)
+            Data::pSettings->OnDetach();
+
+        // 2. Wait for rendering to finish current frame
+        // Timeout after 500ms to prevent infinite freeze if render thread dies
+        int timeout = 0;
+        while (Data::bIsRendering && timeout < 500) { 
+            Sleep(1); 
+            timeout++;
+        }
+
+        // 3. Restore WndProc first to stop processing input events
+        Hooks::RestoreWndProc();
+
+        // 4. Full Shutdown (Removes hooks, unloads ImGui)
         Hooks::Shutdown();
+        
         Data::bIsInitialized = false;
         return true;
     }
@@ -64,13 +90,11 @@ namespace BaseHook
     void LoadSystemFonts()
     {
         ImGuiIO& io = ImGui::GetIO();
-        // Try to find a nice monospaced font
         char windir[MAX_PATH];
         if (GetWindowsDirectoryA(windir, MAX_PATH))
         {
             std::filesystem::path fontsDir = std::filesystem::path(windir) / "Fonts";
-            // Preference list: Cascadia Code (Win10/11), Consolas, Segoe UI
-            const char* fontNames[] = { "CascadiaCode.ttf", "consola.ttf", "segoeui.ttf" };
+            const char* fontNames[] = { "CascadiaCode.ttf", "consola.ttf", "segoeui.ttf", "arial.ttf" };
 
             for (const char* fontName : fontNames)
             {
@@ -79,15 +103,14 @@ namespace BaseHook
                 {
                     io.Fonts->Clear();
                     ImFontConfig config;
-                    // slightly larger than default 13px for readability
                     io.Fonts->AddFontFromFileTTF(fontPath.string().c_str(), 16.0f, &config);
                     LOG_INFO("Loaded system font: %s", fontName);
-                    break;
+                    return; 
                 }
             }
         }
-
-        // Fallback if no fonts found or load failed
+        
+        // Only add default if nothing else loaded
         if (io.Fonts->Fonts.empty())
             io.Fonts->AddFontDefault();
     }
@@ -96,9 +119,13 @@ namespace BaseHook
     {
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
-        io.IniFilename = NULL;
-        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+        
+        // Use settings for IniFilename
+        io.IniFilename = (Data::pSettings && Data::pSettings->m_bSaveImGuiIni) ? "imgui.ini" : NULL;
+        
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
         LoadSystemFonts();
+        
+        ImGui::StyleColorsDark();
     }
 }

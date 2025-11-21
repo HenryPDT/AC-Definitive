@@ -5,6 +5,7 @@
 namespace CrashHandler
 {
 	void Init();
+	void Shutdown();
 }
 
 #endif

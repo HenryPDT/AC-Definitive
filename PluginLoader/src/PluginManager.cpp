@@ -37,7 +37,7 @@ void PluginManager::DrawPluginMenu()
     {
         for (const auto& plugin : m_plugins)
         {
-            ImGui::Text("%s (v%d.%d)", plugin.name.c_str(), plugin.instance->GetPluginVersion() >> 16, plugin.instance->GetPluginVersion() & 0xFFFF);
+            ImGui::BulletText("%s (v%d.%d)", plugin.name.c_str(), plugin.instance->GetPluginVersion() >> 16, plugin.instance->GetPluginVersion() & 0xFFFF);
         }
     }
 }
@@ -83,20 +83,22 @@ void PluginManager::LoadPlugins(PluginLoaderInterface& loaderInterface)
                     IPlugin* plugin_instance = pluginEntry();
                     if (plugin_instance)
                     {
-                        // Check if Plugin version is higher than Loader version.
-                        // We assume the Loader is backward compatible with older plugins.
-                        if (plugin_instance->GetPluginAPIVersion() > g_PluginLoaderAPIVersion)
+                        uint32_t pluginVersion = plugin_instance->GetPluginAPIVersion();
+                        uint32_t loaderVersion = g_PluginLoaderAPIVersion;
+
+                        // Check for Major version mismatch (ABI break) or if plugin is newer than loader
+                        if ((pluginVersion >> 16) != (loaderVersion >> 16) || pluginVersion > loaderVersion)
                         {
-                            LOG_ERROR("Plugin %s requires a newer Loader version. Loader is %d.%d, Plugin requires %d.%d.",
+                            LOG_ERROR("Plugin %s is incompatible. Plugin Version: %d.%d, Loader Version: %d.%d",
                                 entry.path().string().c_str(),
-                                g_PluginLoaderAPIVersion >> 16, g_PluginLoaderAPIVersion & 0xFFFF,
-                                plugin_instance->GetPluginAPIVersion() >> 16, plugin_instance->GetPluginAPIVersion() & 0xFFFF);
+                                pluginVersion >> 16, pluginVersion & 0xFFFF,
+                                loaderVersion >> 16, loaderVersion & 0xFFFF);
                             delete plugin_instance;
                             FreeLibrary(hPlugin);
                             continue;
                         }
-                        LOG_INFO("Loaded plugin: %s", plugin_instance->GetPluginName().data());
-                        m_plugins.emplace_back(LoadedPlugin{ hPlugin, std::unique_ptr<IPlugin>(plugin_instance), std::string(plugin_instance->GetPluginName()) });
+                        LOG_INFO("Loaded plugin: %s", plugin_instance->GetPluginName());
+                        m_plugins.emplace_back(hPlugin, std::unique_ptr<IPlugin>(plugin_instance), std::string(plugin_instance->GetPluginName()));
                         plugin_instance->OnPluginInit(loaderInterface);
                     }
                     else

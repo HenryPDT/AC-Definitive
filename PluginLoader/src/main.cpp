@@ -26,30 +26,77 @@ void LogToConsole(const char* text)
     Globals::console.AddLogF("%s", text);
 }
 
+ImGuiContext* GetImGuiContext_Impl()
+{
+    return ImGui::GetCurrentContext();
+}
+
 Game GetCurrentGame_Impl() { return Globals::pluginManager.GetCurrentGame(); }
 void PluginLoaderInterface_RequestUnload(HMODULE pluginHandle) { /* Not implemented for now */ }
 
 class MySettings : public BaseHook::Settings
 {
 public:
-    MySettings(WndProc_t wndProc) : BaseHook::Settings(wndProc) {}
+    MySettings(WndProc_t wndProc) : BaseHook::Settings(wndProc, true) {}
     virtual void OnActivate() override {}
     virtual void OnDetach() override {}
+
+    virtual void DrawOverlay() override
+    {
+        ImGuiIO& io = ImGui::GetIO();
+
+        if (Globals::loaderInterface.m_ImGuiContext == nullptr)
+            Globals::loaderInterface.m_ImGuiContext = ImGui::GetCurrentContext();
+
+        // Only block input when our own UI is explicitly open (menu or foreground console),
+        // and only while our window is actually focused. This prevents alt-tabbing or
+        // background focus changes from leaving the game permanently input-blocked.
+        HWND foreground = GetForegroundWindow();
+        const bool is_focused = (foreground == BaseHook::Data::hWindow);
+
+        bool bShouldBlock = is_focused &&
+            (BaseHook::Data::bShowMenu || Globals::console.mode == ConsoleMode::ForegroundAndFocusable);
+
+        io.MouseDrawCursor = bShouldBlock;
+
+        // Update the global flag for DirectInput hooks and the WndProc master block
+        if (BaseHook::Data::bBlockInput != bShouldBlock)
+        {
+            BaseHook::Data::bBlockInput = bShouldBlock;
+            LOG_INFO("Input blocking state changed to: %s", BaseHook::Data::bBlockInput ? "ON" : "OFF");
+        }
+
+        Globals::pluginManager.UpdatePlugins();
+        Globals::console.Draw("Console");
+    }
+
+    virtual void DrawMenu() override
+    {
+        ImGui::ShowDemoWindow(&BaseHook::Data::bShowMenu);
+        
+        // if (ImGui::Begin("Plugin Loader", &BaseHook::Data::bShowMenu))
+        // {
+        //     const char* gameNames[] = { "Unknown", "AC1", "AC2", "ACB", "ACR" };
+        //     int gameIdx = (int)Globals::pluginManager.GetCurrentGame();
+        //     if (gameIdx < 0 || gameIdx > 4) gameIdx = 0;
+        //     ImGui::Text("Detected Game: %s", gameNames[gameIdx]);
+        //     ImGui::Separator();
+        //     Globals::pluginManager.DrawPluginMenu();
+        // }
+        // ImGui::End();
+        // Globals::pluginManager.RenderPluginMenus();
+    }
 };
 
 LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     // We are feeding mouse input via DirectInput. To prevent double input, we must
     // stop ImGui's Win32 backend from processing mouse messages.
-    const bool is_mouse_msg = (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST);
+    // FIX: ImGui needs to see mouse messages to handle its internal state correctly.
+    // We should not filter them here; we only block the game from receiving them later.
 
-    // Always let ImGui see non-mouse messages so it can keep its internal state
-    // (keyboard text input, focus, etc.) in sync, but don't rely on the return
-    // value for blocking: we will decide that explicitly below.
-    if (!is_mouse_msg && BaseHook::Data::bIsInitialized)
-    {
+    if (BaseHook::Data::bIsInitialized)
         ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
-    }
 
     // Handle our own hotkeys, but only if an ImGui window doesn't want keyboard input.
     if (BaseHook::Data::bIsInitialized && !ImGui::GetIO().WantCaptureKeyboard)
@@ -63,6 +110,7 @@ LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             else if (wParam == BaseHook::Keys::DetachDll)
             {
                 BaseHook::Detach();
+                Globals::bShutdown = true;
             }
             else if (wParam == VK_OEM_3) // Tilde key
             {
@@ -111,48 +159,7 @@ LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
     return CallWindowProc(BaseHook::Data::oWndProc, hWnd, uMsg, wParam, lParam);
 }
 
-void BaseHook::ImGuiLayer_EvenWhenMenuIsClosed()
-{
-    ImGuiIO& io = ImGui::GetIO();
 
-    if (Globals::loaderInterface.m_ImGuiContext == nullptr)
-        Globals::loaderInterface.m_ImGuiContext = ImGui::GetCurrentContext();
-
-    // Only block input when our own UI is explicitly open (menu or foreground console),
-    // and only while our window is actually focused. This prevents alt-tabbing or
-    // background focus changes from leaving the game permanently input-blocked.
-    HWND foreground = GetForegroundWindow();
-    const bool is_focused = (foreground == BaseHook::Data::hWindow);
-
-    bool bShouldBlock = is_focused &&
-        (BaseHook::Data::bShowMenu || Globals::console.mode == ConsoleMode::ForegroundAndFocusable);
-
-    io.MouseDrawCursor = bShouldBlock;
-
-    // Update the global flag for DirectInput hooks and the WndProc master block
-    if (BaseHook::Data::bBlockInput != bShouldBlock)
-    {
-        BaseHook::Data::bBlockInput = bShouldBlock;
-        LOG_INFO("Input blocking state changed to: %s", BaseHook::Data::bBlockInput ? "ON" : "OFF");
-    }
-
-    Globals::pluginManager.UpdatePlugins();
-    Globals::console.Draw("Console");
-}
-
-void BaseHook::ImGuiLayer_WhenMenuIsOpen()
-{
-    ImGui::ShowDemoWindow(&BaseHook::Data::bShowMenu);
-    /*
-    ImGui::Begin("Parkour Mod Loader");
-    const char* gameNames[] = { "Unknown", "AC1", "AC2", "ACB", "ACR" };
-    ImGui::Text("Detected Game: %s", gameNames[(int)Globals::pluginManager.GetCurrentGame()]);
-    ImGui::Separator();
-    Globals::pluginManager.DrawPluginMenu();
-    ImGui::End();
-    Globals::pluginManager.RenderPluginMenus();
-    */
-}
 
 void Shutdown()
 {
@@ -160,6 +167,7 @@ void Shutdown()
     Globals::pluginManager.ShutdownPlugins();
     BaseHook::Detach();
     Log::RemoveSink(LogToConsole);
+    CrashHandler::Shutdown();
     Log::Shutdown();
 }
 
@@ -176,11 +184,12 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
     Globals::loaderInterface.LogToFile = Log::Write;
     Globals::loaderInterface.LogToConsole = LogToConsole;
     Globals::loaderInterface.RequestUnloadPlugin = PluginLoaderInterface_RequestUnload;
+    Globals::loaderInterface.GetImGuiContext = GetImGuiContext_Impl;
 
     Globals::pluginManager.Init(Globals::hModule, Globals::loaderInterface);
 
-    MySettings settings(WndProc);
-    BaseHook::Start(settings);
+    static MySettings settings(WndProc);
+    BaseHook::Start(&settings);
     BaseHook::Data::thisDLLModule = Globals::hModule;
 
     LOG_INFO("Basehook initialized successfully.");

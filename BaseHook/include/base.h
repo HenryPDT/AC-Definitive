@@ -5,6 +5,7 @@
 #include <d3d10.h>
 #include <dxgi.h>
 #include <imgui.h>
+#include <atomic>
 
 // DX9 Types
 typedef long(__stdcall* EndScene_t)(LPDIRECT3DDEVICE9);
@@ -20,23 +21,24 @@ namespace BaseHook
 {
     class Settings;
 
-    void Start(Settings& settings);
+    void Start(Settings* settings); // Changed to pointer for explicit ownership semantics
     bool Detach();
-    void InitImGuiStyle(); // Helper to unify ImGui setup
+    
+    // Helper to access settings globally if needed
+    Settings* GetSettings();
 
-    // To be implemented by user.
-    void ImGuiLayer_WhenMenuIsOpen();
-    void ImGuiLayer_EvenWhenMenuIsClosed();
+    void InitImGuiStyle();
 
     namespace Data
     {
         extern HMODULE           thisDLLModule;
         extern HWND              hWindow;
+        extern Settings*         pSettings;
         extern bool              bShowMenu;
         extern bool              bIsInitialized;
-        extern bool              bIsDetached;
+        extern std::atomic<bool> bIsDetached; // Changed to atomic for thread safety
         extern bool              bBlockInput;
-        extern Settings*         pSettings;
+        extern std::atomic<bool> bIsRendering;
         extern WndProc_t         oWndProc;
 
         // DX9
@@ -75,19 +77,29 @@ namespace BaseHook
         HRESULT __stdcall hkResizeBuffersDX11(IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags);
         HRESULT __stdcall hkPresentDX10(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags);
         HRESULT __stdcall hkResizeBuffersDX10(IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags);
+
+        void ApplyBufferedInput();
+        void RestoreWndProc();
     }
 
     class Settings
     {
     public:
-        const WndProc_t m_WndProc;
+        WndProc_t m_WndProc;
+        bool m_bSaveImGuiIni;
+
     public:
-        Settings(WndProc_t wndProc = BaseHook::Hooks::WndProc_Base)
-            : m_WndProc(wndProc)
+        Settings(WndProc_t wndProc = BaseHook::Hooks::WndProc_Base, bool bSaveImGuiIni = false)
+            : m_WndProc(wndProc), m_bSaveImGuiIni(bSaveImGuiIni)
         {}
 
+        // Lifecycle callbacks
         virtual void OnActivate() = 0;
         virtual void OnDetach() = 0;
+
+        // Rendering callbacks (Implemented by user)
+        virtual void DrawMenu() = 0;    // Replaces ImGuiLayer_WhenMenuIsOpen
+        virtual void DrawOverlay() = 0; // Replaces ImGuiLayer_EvenWhenMenuIsClosed
 
         virtual ~Settings() {}
     };

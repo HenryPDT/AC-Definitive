@@ -5,7 +5,7 @@ namespace BaseHook
 {
     namespace Hooks
     {
-        void CreateRenderTarget(IDXGISwapChain* pSwapChain)
+        void CreateRenderTarget10(IDXGISwapChain* pSwapChain)
         {
             ID3D10Texture2D* pBackBuffer;
             pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
@@ -16,7 +16,7 @@ namespace BaseHook
             }
         }
 
-        void CleanupRenderTarget()
+        void CleanupRenderTarget10()
         {
             if (Data::pMainRenderTargetView10) { Data::pMainRenderTargetView10->Release(); Data::pMainRenderTargetView10 = NULL; }
         }
@@ -34,37 +34,62 @@ namespace BaseHook
 
                     if (desc.OutputWindow && desc.OutputWindow != Data::hWindow)
                     {
-                        LOG_INFO("Window mismatch detected (Hooked: %p, DXGI: %p). Re-hooking WndProc.", Data::hWindow, desc.OutputWindow);
-                        if (Data::hWindow && Data::oWndProc) SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::oWndProc);
+                        LOG_INFO("Window Changed (DX10). Re-hooking WndProc.");
+                        RestoreWndProc(); // Safely unhook old window first
                         Data::hWindow = desc.OutputWindow;
                         Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
                     }
 
                     InitImGuiStyle();
-                    ImGui_ImplWin32_Init(desc.OutputWindow);
+                    ImGui_ImplWin32_Init(Data::hWindow);
                     ImGui_ImplDX10_Init(Data::pDevice10);
 
-                    CreateRenderTarget(pSwapChain);
+                    CreateRenderTarget10(pSwapChain);
                     Data::bIsInitialized = true;
                 }
             }
 
             if (Data::bIsInitialized)
             {
+                Data::bIsRendering = true;
+                Hooks::ApplyBufferedInput(); // Apply thread-safe input
                 ImGui_ImplDX10_NewFrame();
                 ImGui_ImplWin32_NewFrame();
                 ImGui::NewFrame();
+                
+                ImGui::GetIO().MouseDrawCursor = Data::bShowMenu;
 
-                ImGuiLayer_EvenWhenMenuIsClosed();
-                if (Data::bShowMenu)
+                if (Data::pSettings)
                 {
-                    ImGuiLayer_WhenMenuIsOpen();
+                    Data::pSettings->DrawOverlay();
+                    if (Data::bShowMenu)
+                        Data::pSettings->DrawMenu();
                 }
 
                 ImGui::EndFrame();
                 ImGui::Render();
+
+                // --- State Backup ---
+                ID3D10RenderTargetView* pOldRTV = nullptr;
+                ID3D10DepthStencilView* pOldDSV = nullptr;
+                Data::pDevice10->OMGetRenderTargets(1, &pOldRTV, &pOldDSV);
+                
+                UINT nViewPorts = 1;
+                D3D10_VIEWPORT pOldViewPorts[D3D10_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+                Data::pDevice10->RSGetViewports(&nViewPorts, pOldViewPorts);
+
+                // --- Render ---
                 Data::pDevice10->OMSetRenderTargets(1, &Data::pMainRenderTargetView10, NULL);
                 ImGui_ImplDX10_RenderDrawData(ImGui::GetDrawData());
+                
+                // --- State Restore ---
+                Data::pDevice10->OMSetRenderTargets(1, &pOldRTV, pOldDSV);
+                Data::pDevice10->RSSetViewports(nViewPorts, pOldViewPorts);
+
+                if(pOldRTV) pOldRTV->Release();
+                if(pOldDSV) pOldDSV->Release();
+
+                Data::bIsRendering = false;
             }
 
             return Data::oPresent(pSwapChain, SyncInterval, Flags);
@@ -74,14 +99,16 @@ namespace BaseHook
         {
             if (Data::bIsInitialized)
             {
-                CleanupRenderTarget();
+                CleanupRenderTarget10();
+                ImGui_ImplDX10_InvalidateDeviceObjects();
             }
             
             HRESULT hr = Data::oResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
             
-            if (Data::bIsInitialized && SUCCEEDED(hr))
+            if (SUCCEEDED(hr) && Data::bIsInitialized)
             {
-                CreateRenderTarget(pSwapChain);
+                CreateRenderTarget10(pSwapChain);
+                ImGui_ImplDX10_CreateDeviceObjects();
             }
             return hr;
         }
