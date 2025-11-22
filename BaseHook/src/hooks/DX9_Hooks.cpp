@@ -37,9 +37,13 @@ namespace BaseHook
             }
 
             Data::bIsRendering = true;
-            Hooks::ApplyBufferedInput(); // Apply thread-safe input
             ImGui_ImplDX9_NewFrame();
+
+            Data::bCallingImGui = true;
             ImGui_ImplWin32_NewFrame();
+            Data::bCallingImGui = false;
+
+            Hooks::ApplyBufferedInput(); // Apply thread-safe input after backend updates
             ImGui::NewFrame();
 
             ImGui::GetIO().MouseDrawCursor = Data::bShowMenu;

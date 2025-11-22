@@ -35,6 +35,10 @@ namespace BaseHook
                 if (strcmp(className, "ConsoleWindowClass") == 0) 
                     return TRUE;
 
+                // Ensure it's not the actual allocated console window
+                if (handle == GetConsoleWindow())
+                    return TRUE;
+
                 if (!IsWindowVisible(handle))
                     return TRUE;
 
@@ -59,6 +63,9 @@ namespace BaseHook
                 LOG_ERROR("Failed to initialize MinHook.");
                 return false;
             }
+
+            // Ensure settings exist
+            if (!Data::pSettings) return false;
 
             // 1. Hook Inputs early
             // Now safe to call because MinHook is initialized.
@@ -85,6 +92,8 @@ namespace BaseHook
                     return false;
                 }
             }
+
+            NotifyDirectInputWindow(Data::hWindow);
 
             // 4. Bind Graphics Hooks
             if (type == kiero::RenderType::D3D11) {
@@ -149,6 +158,9 @@ namespace BaseHook
                 ImGui_ImplWin32_Shutdown();
                 ImGui::DestroyContext();
             }
+
+            // Clean up internal input maps
+            CleanupDirectInput();
 
             // Unhook Graphics
             kiero::shutdown();

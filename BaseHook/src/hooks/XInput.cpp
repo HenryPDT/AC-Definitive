@@ -8,16 +8,40 @@ static XInputGetState_t oXInputGetState = nullptr;
 
 DWORD WINAPI hkXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
 {
-    DWORD result = oXInputGetState(dwUserIndex, pState);
-    
-    if (result == ERROR_SUCCESS && BaseHook::Data::bIsInitialized)
+    if (!pState)
+        return ERROR_BAD_ARGUMENTS;
+
+    XINPUT_STATE virtualState{};
+    bool haveVirtual = BaseHook::Hooks::TryGetVirtualXInputState(dwUserIndex, &virtualState);
+
+    DWORD result = ERROR_DEVICE_NOT_CONNECTED;
+    if (!haveVirtual || dwUserIndex != 0)
     {
-        if (BaseHook::Data::bBlockInput)
+        if (oXInputGetState)
+            result = oXInputGetState(dwUserIndex, pState);
+    }
+
+    if (haveVirtual)
+    {
+        *pState = virtualState;
+        result = ERROR_SUCCESS;
+    }
+
+    if (result == ERROR_SUCCESS)
+    {
+        BaseHook::Data::lastXInputTime.store(GetTickCount64(), std::memory_order_relaxed);
+
+        if (BaseHook::Data::bCallingImGui)
         {
-            // Zero out the state so the game sees no input
+            return result;
+        }
+
+        if (BaseHook::Data::bIsInitialized && BaseHook::Data::bBlockInput)
+        {
             memset(pState, 0, sizeof(XINPUT_STATE));
         }
     }
+
     return result;
 }
 
@@ -27,7 +51,7 @@ namespace BaseHook { namespace Hooks {
         LOG_INFO("XInput: Initializing hooks...");
 
         // Try to find loaded XInput module first
-        const char* names[] = { "xinput1_4.dll", "xinput9_1_0.dll", "xinput1_3.dll" };
+        const char* names[] = { "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll" };
         HMODULE hXInput = nullptr;
         
         for (const char* name : names) {

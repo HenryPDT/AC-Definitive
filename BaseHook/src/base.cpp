@@ -13,8 +13,12 @@ namespace BaseHook
         std::atomic<bool> bIsDetached = false;
         bool              bBlockInput = false;
         std::atomic<bool> bIsRendering = false;
+        bool              bFixDirectInput = true;
         Settings*         pSettings = nullptr;
         WndProc_t         oWndProc = nullptr;
+
+        thread_local bool               bCallingImGui = false;
+        std::atomic<unsigned long long> lastXInputTime = 0;
 
         // DX9
         IDirect3DDevice9* pDevice = NULL;
@@ -68,6 +72,10 @@ namespace BaseHook
         // 1. Notify user code
         if (Data::pSettings)
             Data::pSettings->OnDetach();
+
+        // 2a. Yield to ensure Render threads see the Detach flag
+        // Prevents race where Render thread passes check but hasn't set bIsRendering yet
+        Sleep(50);
 
         // 2. Wait for rendering to finish current frame
         // Timeout after 500ms to prevent infinite freeze if render thread dies
@@ -124,6 +132,7 @@ namespace BaseHook
         io.IniFilename = (Data::pSettings && Data::pSettings->m_bSaveImGuiIni) ? "imgui.ini" : NULL;
         
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
         LoadSystemFonts();
         
         ImGui::StyleColorsDark();

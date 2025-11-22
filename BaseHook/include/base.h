@@ -4,8 +4,10 @@
 #include <d3d11.h>
 #include <d3d10.h>
 #include <dxgi.h>
+#include <xinput.h>
 #include <imgui.h>
 #include <atomic>
+#include <cstdint>
 
 // DX9 Types
 typedef long(__stdcall* EndScene_t)(LPDIRECT3DDEVICE9);
@@ -39,7 +41,12 @@ namespace BaseHook
         extern std::atomic<bool> bIsDetached; // Changed to atomic for thread safety
         extern bool              bBlockInput;
         extern std::atomic<bool> bIsRendering;
+        extern bool              bFixDirectInput; // Moved here for global visibility
         extern WndProc_t         oWndProc;
+
+        // Input Management
+        extern thread_local bool                   bCallingImGui;   // True when ImGui_ImplWin32_NewFrame is polling inputs
+        extern std::atomic<unsigned long long>     lastXInputTime;  // Timestamp of last successful XInput poll
 
         // DX9
         extern IDirect3DDevice9* pDevice;
@@ -80,6 +87,21 @@ namespace BaseHook
 
         void ApplyBufferedInput();
         void RestoreWndProc();
+        void CleanupDirectInput();
+        void NotifyDirectInputWindow(HWND hWnd);
+        void HandleDeviceChange(WPARAM wParam, LPARAM lParam);
+        bool TryGetVirtualXInputState(DWORD dwUserIndex, XINPUT_STATE* pState);
+
+        enum class GamepadInputSource : uint8_t
+        {
+            None,
+            HookedDevice,
+            PrivateFallback,
+            SonyHID // Unified support for DualSense and DualShock 4
+        };
+
+        bool SubmitVirtualGamepadState(GamepadInputSource source, void* context, const XINPUT_STATE& state, bool markAuthoritative, bool* outSourceChanged = nullptr);
+        void ResetVirtualGamepad(GamepadInputSource sourceFilter = GamepadInputSource::None, void* contextFilter = nullptr);
     }
 
     class Settings

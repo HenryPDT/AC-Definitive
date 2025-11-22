@@ -31,6 +31,11 @@ namespace BaseHook
                 }
             }
 
+            if (uMsg == WM_DEVICECHANGE)
+            {
+                Hooks::HandleDeviceChange(wParam, lParam);
+            }
+
             if (Data::bIsInitialized && !Data::bIsDetached)
             {
                 // 2. Always feed ImGui
