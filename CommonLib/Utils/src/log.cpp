@@ -96,6 +96,7 @@ void Log::Write(const char* fmt, ...)
 		if (log_file.is_open())
 		{
 			log_file << final_log_line << "\n"; // \n is faster than endl (no forced flush)
+			log_file.flush(); // keep file output in sync with console and avoid buffered loss
 		}
 		// Copy sinks to avoid calling them while holding the lock (prevents deadlocks)
 		sinks_copy = sinks;

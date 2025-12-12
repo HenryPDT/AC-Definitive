@@ -27,6 +27,10 @@ namespace
 	LONG WINAPI VectoredExceptionHandler(EXCEPTION_POINTERS* pExceptionPointers)
 	{
 		DWORD code = pExceptionPointers->ExceptionRecord->ExceptionCode;
+		if (code == 0x406D1388) // thread-name exception spam from debuggers
+		{
+			return EXCEPTION_CONTINUE_SEARCH;
+		}
 		void* addr = pExceptionPointers->ExceptionRecord->ExceptionAddress;
 		DWORD threadId = GetCurrentThreadId();
 
@@ -39,6 +43,11 @@ namespace
 
 	LONG WINAPI UnhandledExceptionHandler(EXCEPTION_POINTERS* pExceptionPointers)
 	{
+		DWORD code = pExceptionPointers->ExceptionRecord->ExceptionCode;
+		if (code == 0x406D1388) // ignore benign thread-name exceptions
+		{
+			return EXCEPTION_CONTINUE_SEARCH;
+		}
 		DWORD threadId = GetCurrentThreadId();
 		DWORD processId = GetCurrentProcessId();
 
@@ -48,7 +57,6 @@ namespace
 		Log::Write("Process ID: %u, Thread ID: %u", processId, threadId);
 
 		// Exception details
-		DWORD code = pExceptionPointers->ExceptionRecord->ExceptionCode;
 		Log::Write("Exception Code: 0x%X (%s)", code, GetExceptionDescription(code));
 		Log::Write("Exception Flags: 0x%X", pExceptionPointers->ExceptionRecord->ExceptionFlags);
 		Log::Write("Exception Address: 0x%p", pExceptionPointers->ExceptionRecord->ExceptionAddress);

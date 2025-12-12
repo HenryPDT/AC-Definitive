@@ -633,13 +633,13 @@ kiero::Status::Enum kiero::init(RenderType::Enum _renderType)
 			{
 				type = RenderType::D3D10;
 			}
-			else if (::GetModuleHandle(KIERO_TEXT("d3d11.dll")) != NULL)
-			{
-				type = RenderType::D3D11;
-			}
 			else if (::GetModuleHandle(KIERO_TEXT("d3d9.dll")) != NULL)
 			{
 				type = RenderType::D3D9;
+			}
+			else if (::GetModuleHandle(KIERO_TEXT("d3d11.dll")) != NULL)
+			{
+				type = RenderType::D3D11;
 			}
 			else if (::GetModuleHandle(KIERO_TEXT("d3d12.dll")) != NULL)
 			{

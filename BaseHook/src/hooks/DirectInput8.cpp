@@ -60,13 +60,12 @@ static const GUID IID_IDirectInput8W_Local = { 0xBF798031, 0x483A, 0x4DA2, { 0xA
 static DirectInput8Create_t oDirectInput8Create = nullptr;
 
 // Separate trampolines for ANSI and Unicode to prevent collisions
-static IDirectInput8_CreateDevice_t oCreateDeviceA = nullptr;
-static IDirectInput8_CreateDevice_t oCreateDeviceW = nullptr;
+// Map for IDirectInput8 methods (Address -> Trampoline)
+static std::unordered_map<void*, void*> g_FactoryMethodTrampolines;
 
 // Shared trampolines for Device methods (VTable is shared or identical signature)
-static IDirectInputDevice8_GetDeviceState_t oGetDeviceState = nullptr;
-static IDirectInputDevice8_GetDeviceData_t oGetDeviceData = nullptr;
-static IDirectInputDevice8_SetCooperativeLevel_t oSetCooperativeLevel = nullptr;
+// Trampoline Map for Device methods (Address -> Trampoline)
+static std::unordered_map<void*, void*> g_DeviceMethodTrampolines;
 
 // Trackers
 static std::unordered_set<void*> g_hooked_functions;
@@ -1436,6 +1435,18 @@ void ProcessDeviceData(IDirectInputDevice8* pDevice, DWORD cbObjectData, LPDIDEV
 
 HRESULT STDMETHODCALLTYPE hkGetDeviceState(IDirectInputDevice8* pDevice, DWORD cbData, LPVOID lpvData)
 {
+    IDirectInputDevice8_GetDeviceState_t oGetDeviceState = nullptr;
+    {
+        void** vtable = *reinterpret_cast<void***>(pDevice);
+        void* pFunc = vtable[9];
+        std::shared_lock<std::shared_mutex> lock(g_dinput_mutex);
+        auto it = g_DeviceMethodTrampolines.find(pFunc);
+        if (it != g_DeviceMethodTrampolines.end())
+            oGetDeviceState = static_cast<IDirectInputDevice8_GetDeviceState_t>(it->second);
+    }
+
+    if (!oGetDeviceState) return DIERR_GENERIC;
+
     if (g_isPrivatePolling)
         return oGetDeviceState(pDevice, cbData, lpvData);
 
@@ -1457,6 +1468,18 @@ HRESULT STDMETHODCALLTYPE hkGetDeviceState(IDirectInputDevice8* pDevice, DWORD c
 
 HRESULT STDMETHODCALLTYPE hkGetDeviceData(IDirectInputDevice8* pDevice, DWORD cbObjectData, LPDIDEVICEOBJECTDATA rgdod, LPDWORD pdwInOut, DWORD dwFlags)
 {
+    IDirectInputDevice8_GetDeviceData_t oGetDeviceData = nullptr;
+    {
+        void** vtable = *reinterpret_cast<void***>(pDevice);
+        void* pFunc = vtable[10];
+        std::shared_lock<std::shared_mutex> lock(g_dinput_mutex);
+        auto it = g_DeviceMethodTrampolines.find(pFunc);
+        if (it != g_DeviceMethodTrampolines.end())
+            oGetDeviceData = static_cast<IDirectInputDevice8_GetDeviceData_t>(it->second);
+    }
+
+    if (!oGetDeviceData) return DIERR_GENERIC;
+
     if (g_isPrivatePolling)
         return oGetDeviceData(pDevice, cbObjectData, rgdod, pdwInOut, dwFlags);
 
@@ -1473,6 +1496,19 @@ HRESULT STDMETHODCALLTYPE hkSetCooperativeLevel(IDirectInputDevice8* pDevice, HW
         dwFlags |= DISCL_NONEXCLUSIVE;
         LOG_INFO("DI8: Enforcing DISCL_NONEXCLUSIVE for device %p", pDevice);
     }
+
+    IDirectInputDevice8_SetCooperativeLevel_t oSetCooperativeLevel = nullptr;
+    {
+        void** vtable = *reinterpret_cast<void***>(pDevice);
+        void* pFunc = vtable[13];
+        std::shared_lock<std::shared_mutex> lock(g_dinput_mutex);
+        auto it = g_DeviceMethodTrampolines.find(pFunc);
+        if (it != g_DeviceMethodTrampolines.end())
+            oSetCooperativeLevel = static_cast<IDirectInputDevice8_SetCooperativeLevel_t>(it->second);
+    }
+
+    if (!oSetCooperativeLevel) return DIERR_GENERIC;
+
     return oSetCooperativeLevel(pDevice, hWnd, dwFlags);
 }
 
@@ -1485,31 +1521,37 @@ void HookDeviceMethods(IDirectInputDevice8* device)
     void* pGetDeviceData = vtable[10];
     void* pSetCooperativeLevel = vtable[13];
 
-    if (g_hooked_functions.find(pGetDeviceState) == g_hooked_functions.end())
+    if (g_DeviceMethodTrampolines.find(pGetDeviceState) == g_DeviceMethodTrampolines.end())
     {
-        if (MH_CreateHook(pGetDeviceState, &hkGetDeviceState, reinterpret_cast<void**>(&oGetDeviceState)) == MH_OK &&
+        void* pTrampoline = nullptr;
+        if (MH_CreateHook(pGetDeviceState, &hkGetDeviceState, &pTrampoline) == MH_OK &&
             MH_EnableHook(pGetDeviceState) == MH_OK)
         {
+            g_DeviceMethodTrampolines[pGetDeviceState] = pTrampoline;
             g_hooked_functions.insert(pGetDeviceState);
             LOG_INFO("DI8: Hooked GetDeviceState at %p", pGetDeviceState);
         }
     }
 
-    if (g_hooked_functions.find(pGetDeviceData) == g_hooked_functions.end())
+    if (g_DeviceMethodTrampolines.find(pGetDeviceData) == g_DeviceMethodTrampolines.end())
     {
-        if (MH_CreateHook(pGetDeviceData, &hkGetDeviceData, reinterpret_cast<void**>(&oGetDeviceData)) == MH_OK &&
+        void* pTrampoline = nullptr;
+        if (MH_CreateHook(pGetDeviceData, &hkGetDeviceData, &pTrampoline) == MH_OK &&
             MH_EnableHook(pGetDeviceData) == MH_OK)
         {
+            g_DeviceMethodTrampolines[pGetDeviceData] = pTrampoline;
             g_hooked_functions.insert(pGetDeviceData);
             LOG_INFO("DI8: Hooked GetDeviceData at %p", pGetDeviceData);
         }
     }
 
-    if (g_hooked_functions.find(pSetCooperativeLevel) == g_hooked_functions.end())
+    if (g_DeviceMethodTrampolines.find(pSetCooperativeLevel) == g_DeviceMethodTrampolines.end())
     {
-        if (MH_CreateHook(pSetCooperativeLevel, &hkSetCooperativeLevel, reinterpret_cast<void**>(&oSetCooperativeLevel)) == MH_OK &&
+        void* pTrampoline = nullptr;
+        if (MH_CreateHook(pSetCooperativeLevel, &hkSetCooperativeLevel, &pTrampoline) == MH_OK &&
             MH_EnableHook(pSetCooperativeLevel) == MH_OK)
         {
+            g_DeviceMethodTrampolines[pSetCooperativeLevel] = pTrampoline;
             g_hooked_functions.insert(pSetCooperativeLevel);
             LOG_INFO("DI8: Hooked SetCooperativeLevel at %p", pSetCooperativeLevel);
         }
@@ -1527,6 +1569,18 @@ static void ProcessCreateDeviceResult(HRESULT hr, IDirectInput8* pDI, LPDIRECTIN
 
 HRESULT STDMETHODCALLTYPE hkCreateDeviceA(IDirectInput8* pDI, REFGUID rguid, LPDIRECTINPUTDEVICE8* lplpDirectInputDevice, LPUNKNOWN pUnkOuter)
 {
+    IDirectInput8_CreateDevice_t oCreateDeviceA = nullptr;
+    {
+        void** vtable = *reinterpret_cast<void***>(pDI);
+        void* pFunc = vtable[3];
+        std::shared_lock<std::shared_mutex> lock(g_dinput_mutex);
+        auto it = g_FactoryMethodTrampolines.find(pFunc);
+        if (it != g_FactoryMethodTrampolines.end())
+            oCreateDeviceA = static_cast<IDirectInput8_CreateDevice_t>(it->second);
+    }
+
+    if (!oCreateDeviceA) return DIERR_GENERIC;
+
     HRESULT hr = oCreateDeviceA(pDI, rguid, lplpDirectInputDevice, pUnkOuter);
     ProcessCreateDeviceResult(hr, pDI, lplpDirectInputDevice);
     return hr;
@@ -1534,6 +1588,18 @@ HRESULT STDMETHODCALLTYPE hkCreateDeviceA(IDirectInput8* pDI, REFGUID rguid, LPD
 
 HRESULT STDMETHODCALLTYPE hkCreateDeviceW(IDirectInput8* pDI, REFGUID rguid, LPDIRECTINPUTDEVICE8* lplpDirectInputDevice, LPUNKNOWN pUnkOuter)
 {
+    IDirectInput8_CreateDevice_t oCreateDeviceW = nullptr;
+    {
+        void** vtable = *reinterpret_cast<void***>(pDI);
+        void* pFunc = vtable[3];
+        std::shared_lock<std::shared_mutex> lock(g_dinput_mutex);
+        auto it = g_FactoryMethodTrampolines.find(pFunc);
+        if (it != g_FactoryMethodTrampolines.end())
+            oCreateDeviceW = static_cast<IDirectInput8_CreateDevice_t>(it->second);
+    }
+
+    if (!oCreateDeviceW) return DIERR_GENERIC;
+
     HRESULT hr = oCreateDeviceW(pDI, rguid, lplpDirectInputDevice, pUnkOuter);
     ProcessCreateDeviceResult(hr, pDI, lplpDirectInputDevice);
     return hr;
@@ -1550,22 +1616,26 @@ HRESULT WINAPI hkDirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID rii
 
         std::unique_lock<std::shared_mutex> lock(g_dinput_mutex);
 
-        if (g_hooked_functions.find(pCreateDevice) == g_hooked_functions.end())
+        if (g_FactoryMethodTrampolines.find(pCreateDevice) == g_FactoryMethodTrampolines.end())
         {
             if (IsEqualGUID(riidltf, IID_IDirectInput8A_Local))
             {
-                if (MH_CreateHook(pCreateDevice, &hkCreateDeviceA, reinterpret_cast<void**>(&oCreateDeviceA)) == MH_OK &&
+                void* pTrampoline = nullptr;
+                if (MH_CreateHook(pCreateDevice, &hkCreateDeviceA, &pTrampoline) == MH_OK &&
                     MH_EnableHook(pCreateDevice) == MH_OK)
                 {
+                    g_FactoryMethodTrampolines[pCreateDevice] = pTrampoline;
                     g_hooked_functions.insert(pCreateDevice);
                     LOG_INFO("DI8: Hooked CreateDevice (ANSI) at %p", pCreateDevice);
                 }
             }
             else if (IsEqualGUID(riidltf, IID_IDirectInput8W_Local))
             {
-                if (MH_CreateHook(pCreateDevice, &hkCreateDeviceW, reinterpret_cast<void**>(&oCreateDeviceW)) == MH_OK &&
+                void* pTrampoline = nullptr;
+                if (MH_CreateHook(pCreateDevice, &hkCreateDeviceW, &pTrampoline) == MH_OK &&
                     MH_EnableHook(pCreateDevice) == MH_OK)
                 {
+                    g_FactoryMethodTrampolines[pCreateDevice] = pTrampoline;
                     g_hooked_functions.insert(pCreateDevice);
                     LOG_INFO("DI8: Hooked CreateDevice (Unicode) at %p", pCreateDevice);
                 }
@@ -1583,6 +1653,8 @@ namespace BaseHook { namespace Hooks {
         g_Devices.clear();
         g_FailedDevices.clear();
         g_hooked_functions.clear();
+        g_DeviceMethodTrampolines.clear();
+        g_FactoryMethodTrampolines.clear();
         g_PrimaryDevice = nullptr;
         g_lastAuthoritativeUpdateMs.store(0, std::memory_order_relaxed);
         lock.unlock();

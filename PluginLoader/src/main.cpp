@@ -21,9 +21,16 @@ namespace Globals
     PluginLoaderInterface loaderInterface;
 }
 
-void LogToConsole(const char* text)
+// Sink that only pushes to the on-screen console.
+void LogConsoleSink(const char* text)
 {
     Globals::console.AddLogF("%s", text);
+}
+
+// Unified entrypoint for plugins: writes once, fans out to file + console sinks.
+void LogUnified(const char* text)
+{
+    Log::Write("%s", text);
 }
 
 ImGuiContext* GetImGuiContext_Impl()
@@ -64,6 +71,22 @@ public:
         {
             BaseHook::Data::bBlockInput = bShouldBlock;
             LOG_INFO("Input blocking state changed to: %s", BaseHook::Data::bBlockInput ? "ON" : "OFF");
+        }
+
+        // Always confine the cursor to the game window client area while the window is focused.
+        // This prevents the mouse from drifting to other monitors or clicking the desktop/background,
+        if (is_focused && BaseHook::Data::hWindow)
+        {
+            RECT rect;
+            if (GetClientRect(BaseHook::Data::hWindow, &rect))
+            {
+                POINT ul = { rect.left, rect.top };
+                POINT lr = { rect.right, rect.bottom };
+                ClientToScreen(BaseHook::Data::hWindow, &ul);
+                ClientToScreen(BaseHook::Data::hWindow, &lr);
+                rect = { ul.x, ul.y, lr.x, lr.y };
+                ClipCursor(&rect);
+            }
         }
 
         Globals::pluginManager.UpdatePlugins();
@@ -166,7 +189,7 @@ void Shutdown()
     LOG_INFO("Shutdown initiated.");
     Globals::pluginManager.ShutdownPlugins();
     BaseHook::Detach();
-    Log::RemoveSink(LogToConsole);
+    Log::RemoveSink(LogConsoleSink);
     CrashHandler::Shutdown();
     Log::Shutdown();
 }
@@ -175,14 +198,14 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
 {
     Globals::hModule = (HMODULE)lpReserved;
     Log::Init(Globals::hModule);
-    Log::AddSink(LogToConsole);
+    Log::AddSink(LogConsoleSink);
     CrashHandler::Init();
 
     LOG_INFO("Plugin Loader Attached.");
 
     Globals::loaderInterface.GetCurrentGame = GetCurrentGame_Impl;
     Globals::loaderInterface.LogToFile = Log::Write;
-    Globals::loaderInterface.LogToConsole = LogToConsole;
+    Globals::loaderInterface.LogToConsole = LogUnified;
     Globals::loaderInterface.RequestUnloadPlugin = PluginLoaderInterface_RequestUnload;
     Globals::loaderInterface.GetImGuiContext = GetImGuiContext_Impl;
 

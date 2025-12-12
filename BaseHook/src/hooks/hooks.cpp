@@ -21,8 +21,15 @@ namespace BaseHook
                 }
             }
 
+            struct WindowSearchContext {
+                HWND bestHandle = nullptr;
+                long maxArea = 0;
+            };
+
             BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam)
             {
+                WindowSearchContext* context = (WindowSearchContext*)lParam;
+
                 DWORD wndProcId;
                 GetWindowThreadProcessId(handle, &wndProcId);
 
@@ -35,21 +42,35 @@ namespace BaseHook
                 if (strcmp(className, "ConsoleWindowClass") == 0) 
                     return TRUE;
 
-                // Ensure it's not the actual allocated console window
                 if (handle == GetConsoleWindow())
                     return TRUE;
 
                 if (!IsWindowVisible(handle))
                     return TRUE;
 
-                Data::hWindow = handle;
-                return FALSE;
+                // Get Window Title for logging
+                char title[256];
+                GetWindowTextA(handle, title, sizeof(title));
+
+                RECT rect;
+                GetClientRect(handle, &rect);
+                long area = (rect.right - rect.left) * (rect.bottom - rect.top);
+
+                LOG_INFO("Found Window: Handle=%p, Class='%s', Title='%s', Area=%ld", handle, className, title, area);
+
+                if (area > context->maxArea) {
+                    context->maxArea = area;
+                    context->bestHandle = handle;
+                }
+
+                return TRUE; // Continue enumerating to find the biggest one
             }
 
             HWND FindGameWindow()
             {
-                Data::hWindow = NULL;
-                EnumWindows(EnumWindowsCallback, NULL);
+                WindowSearchContext context;
+                EnumWindows(EnumWindowsCallback, (LPARAM)&context);
+                Data::hWindow = context.bestHandle;
                 return Data::hWindow;
             }
         }

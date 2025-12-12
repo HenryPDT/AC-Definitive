@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <sstream>
+#include <cstdio>
 
 #include "AutoAssemblerKinda.h"
 
@@ -43,26 +44,26 @@ void* FindFreeBlockForRegion(uintptr_t base, unsigned int size)
         maxAddress = base + 0x70000000;
     }
     else {
+#ifdef _WIN64
         maxAddress = ptrUint(0xffffffffffff0000);
+#else
+        maxAddress = ptrUint(0xffffffff);
+#endif
     }
 
-    constexpr bool processhandler_is64bit = true;
-    if (processhandler_is64bit)
-    {
-        if (minAddress > uintptr_t(systeminfo.lpMaximumApplicationAddress) || minAddress < uintptr_t(systeminfo.lpMinimumApplicationAddress))
-            minAddress = uintptr_t(systeminfo.lpMinimumApplicationAddress);
-        if (maxAddress > uintptr_t(systeminfo.lpMaximumApplicationAddress) || maxAddress < uintptr_t(systeminfo.lpMinimumApplicationAddress))
-            maxAddress = uintptr_t(systeminfo.lpMaximumApplicationAddress);
-    }
-    dprintf("minaddress=%.16llx", minAddress);
-    dprintf("maxaddress=%.16llx", maxAddress);
+    if (minAddress > uintptr_t(systeminfo.lpMaximumApplicationAddress) || minAddress < uintptr_t(systeminfo.lpMinimumApplicationAddress))
+        minAddress = uintptr_t(systeminfo.lpMinimumApplicationAddress);
+    if (maxAddress > uintptr_t(systeminfo.lpMaximumApplicationAddress) || maxAddress < uintptr_t(systeminfo.lpMinimumApplicationAddress))
+        maxAddress = uintptr_t(systeminfo.lpMaximumApplicationAddress);
+    dprintf("minaddress=%.16llx", (unsigned long long)minAddress);
+    dprintf("maxaddress=%.16llx", (unsigned long long)maxAddress);
 
     b = minAddress;
 
     ZeroMemory(&mbi, sizeof(mbi));
     while (VirtualQuery((LPCVOID)b, &mbi, sizeof(mbi)) == sizeof(mbi))
     {
-        dprintf("  +VQ: allocBase:%llx, pageBase: %llx, regionSize:%x, state: %x ", uintptr_t(mbi.AllocationBase), mbi.BaseAddress, mbi.RegionSize, mbi.State);
+        dprintf("  +VQ: allocBase:%llx, pageBase: %llx, regionSize:%x, state: %x ", (unsigned long long)uintptr_t(mbi.AllocationBase), (unsigned long long)uintptr_t(mbi.BaseAddress), mbi.RegionSize, mbi.State);
         if ((ptrUint)mbi.BaseAddress > maxAddress) { return nullptr; } //no memory found, just return 0 and let windows decide
         if (mbi.State == MEM_FREE && mbi.RegionSize > size)
         {
@@ -86,13 +87,13 @@ void* FindFreeBlockForRegion(uintptr_t base, unsigned int size)
                     //if the difference is closer then use that
                     if (result == nullptr) {
                         result = (void*)x;
-                        dprintf("1 result: %llx", result);
+                        dprintf("1 result: %llx", (unsigned long long)uintptr_t(result));
                     }
                     else
                     {
                         if (abs(ptrInt(x - base)) < abs(ptrInt(ptrUint(result) - base))) {
                             result = (void*)x;
-                            dprintf("2 result: %llx", result);
+                            dprintf("2 result: %llx", (unsigned long long)uintptr_t(result));
                         }
                     }
                 }
@@ -113,13 +114,13 @@ void* FindFreeBlockForRegion(uintptr_t base, unsigned int size)
                 }
                 if (result == nullptr) {
                     result = (void*)x;
-                    dprintf("3 result: %llx", result);
+                    dprintf("3 result: %llx", (unsigned long long)uintptr_t(result));
                 }
                 else
                 {
                     if (abs(ptrInt(x - base)) < abs(ptrInt(ptrUint(result) - base))) {
                         result = (void*)x;
-                        dprintf("4 result: %llx", result);
+                        dprintf("4 result: %llx", (unsigned long long)uintptr_t(result));
                     }
                 }
             }
@@ -132,15 +133,15 @@ void* FindFreeBlockForRegion(uintptr_t base, unsigned int size)
         b = ptrUint(mbi.BaseAddress) + mbi.RegionSize;
 
         if (b > maxAddress) {
-            dprintf("b>maxAddress; result: %llx, b: %llx, oldb: %llx", result, b, oldb);
+            dprintf("b>maxAddress; result: %llx, b: %llx, oldb: %llx", (unsigned long long)uintptr_t(result), (unsigned long long)b, (unsigned long long)oldb);
             return result;
         }
         if (oldb > b) {
-            dprintf("overflow; b: %llx, oldb: %llx", b, oldb);
+            dprintf("overflow; b: %llx, oldb: %llx", (unsigned long long)b, (unsigned long long)oldb);
             return result; //overflow
         }
     }
-    dprintf("returning; result: %llx, b: %llx, oldb: %llx", result, b, oldb);
+    dprintf("returning; result: %llx, b: %llx, oldb: %llx", (unsigned long long)uintptr_t(result), (unsigned long long)b, (unsigned long long)oldb);
     return result;
 }
 void PatchMemory(void* dst, SIZE_T size, const void* src)
@@ -149,6 +150,7 @@ void PatchMemory(void* dst, SIZE_T size, const void* src)
     VirtualProtect(dst, size, PAGE_EXECUTE_READWRITE, &oldProtect);
     memcpy(dst, src, size);
     VirtualProtect(dst, size, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), dst, size);
 }
 
 void WriteableSymbol::Write()
@@ -296,7 +298,7 @@ void WriteableSymbol::ProcessNewCodeElements(size_t idxToStartProcessingFrom)
             // - Skip all whitespace,
             // - Read 2 characters (at most),
             // - Attempt to convert them to a byte.
-            std::stringstream hexss{ hexString->data() };
+            std::stringstream hexss{ std::string(*hexString) };
             hexss.setf(hexss.skipws);
             std::string _2byteBuf;
             byte parsedByte;
@@ -514,10 +516,12 @@ void AutoAssemblerCodeHolder_Base::PresetScript_CCodeInTheMiddle(uintptr_t where
         // After pushfd+pushad, ESP points to saved EDI, which is the start of AllRegisters struct
         // Stack layout: ESP+0=EDI, +4=ESI, +8=EBP, +12=ESP, +16=EBX, +20=EDX, +24=ECX, +28=EAX, +32=EFLAGS
         // This matches the AllRegisters struct layout exactly
-        "8B C4",                    // mov eax, esp ; EAX points to saved registers (start of AllRegisters struct)
-        "50",                       // push eax ; push pointer to AllRegisters as argument
+        "8B EC",                    // mov ebp, esp ; Save original ESP (pointer to AllRegisters) in EBP (callee-saved)
+        "83 E4 F0",                 // and esp, -16 ; Align ESP to 16-byte boundary
+        "83 EC 0C",                 // sub esp, 12  ; Padding: so that after 'push ebp' (4 bytes), ESP is 16-byte aligned (ends in 0)
+        "55",                       // push ebp     ; push pointer to AllRegisters as argument
         "FF 15", ABS(receiverFuncAddr, 4), // call dword ptr [receiverFuncAddr]
-        "83 C4 04",                 // add esp, 04 ; clean up argument
+        "8B E5",                    // mov esp, ebp ; Restore original ESP
         "61",                       // popad - restores registers (including any modifications)
         "9D",                       // popfd - restores flags
         "C3",                       // ret
@@ -551,9 +555,17 @@ void AutoAssemblerCodeHolder_Base::PresetScript_ReplaceFunctionAtItsStart(uintpt
     ss << std::hex << whereToInject;
     std::string symbolsBaseName = "injectAt_" + ss.str();
     DEFINE_ADDR_NAMED(injectAt, symbolsBaseName, whereToInject);
+#ifdef _WIN64
     injectAt = {
         "FF 25 00000000",       //  - jmp [label_externalFuncAddrBelow]
     //label_externalFuncAddrBelow:
         dq((uintptr_t)Func)
     };
+#else
+    std::string targetName = symbolsBaseName + "__target";
+    DEFINE_ADDR_NAMED(targetFunc, targetName, (uintptr_t)Func);
+    injectAt = {
+        db(0xE9), RIP(targetFunc)
+    };
+#endif
 }
