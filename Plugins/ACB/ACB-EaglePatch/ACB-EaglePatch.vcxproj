@@ -88,11 +88,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\EaglePatchACB.cpp" />
-    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\EaglePatch.cpp" />
+    <ClCompile Include="src\Patches\Controller.cpp" />
+    <ClCompile Include="src\Patches\SkipIntro.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\EaglePatchACB.h" />
+    <ClInclude Include="src\EaglePatch.h" />
+    <ClInclude Include="src\Patches\Controller.h" />
+    <ClInclude Include="src\Patches\SkipIntro.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\CommonLib\AutoAssemblerKinda\AutoAssemblerKinda.vcxproj">

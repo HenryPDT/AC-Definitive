@@ -1,7 +1,9 @@
 #include <windows.h>
 #include "IPlugin.h"
 #include "imgui.h"
-#include "EaglePatchACB.h"
+#include "EaglePatch.h"
+#include "Patches/Controller.h"
+#include "Patches/SkipIntro.h"
 
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
@@ -18,8 +20,15 @@ public:
         g_loader_ref = &loader_interface;
         g_loader_ref->LogToFile("[EaglePatch] Initializing...");
 
-        // Initialize EaglePatch hooks (XInput support)
-        ACBEaglePatch::Init();
+        uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
+        auto version = ACBEaglePatch::DetectVersion(baseAddr);
+        if (version != ACBEaglePatch::GameVersion::Unknown)
+        {
+            ACBEaglePatch::InitController(baseAddr, version);
+            ACBEaglePatch::InitSkipIntro(baseAddr, version);
+        }
+        else
+            g_loader_ref->LogToConsole("[EaglePatch] Unknown Game Version!");
     }
 
     void OnGuiRender() override

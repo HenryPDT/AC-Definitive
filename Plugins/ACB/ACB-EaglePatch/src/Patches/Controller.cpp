@@ -1,4 +1,5 @@
-#include "EaglePatchACB.h"
+#include "../EaglePatch.h"
+#include "Controller.h"
 #include <AutoAssemblerKinda.h>
 #include <cstring>
 
@@ -52,33 +53,8 @@ namespace ACBEaglePatch
     uint32_t* sAddresses::_descriptor_var = nullptr;
     void** sAddresses::_delete_class = nullptr;
 
-    enum class GameVersion
-    {
-        Unknown,
-        Version1, // Marker at +0x127A296 == 0xFEEA3EF6
-        Version2  // Marker at +0x0BE88C6 == 0xFF6011A6
-    };
-
     namespace
     {
-        // Basic address validation to avoid crashing on unknown builds
-        bool AreAddressesResolved()
-        {
-            return sAddresses::Pad_UpdateTimeStamps &&
-                sAddresses::Pad_ScaleStickValues &&
-                sAddresses::PadXenon_ctor &&
-                sAddresses::PadProxyPC_AddPad &&
-                sAddresses::_addXenonJoy_Patch &&
-                sAddresses::_addXenonJoy_JumpOut &&
-                sAddresses::_PadProxyPC_Patch &&
-                sAddresses::_descriptor_var &&
-                sAddresses::_delete_class &&
-                ac_getNewDescriptor &&
-                ac_getDeleteDescriptor &&
-                Gear::MemHook::pRef;
-        }
-
-        // Assign all per-version addresses; keep in one place to reduce copy/paste errors
         bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
         {
             switch (version)
@@ -91,7 +67,6 @@ namespace ACBEaglePatch
                 sAddresses::_addXenonJoy_Patch = baseAddr + 0x007935A5;
                 sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x007935BC;
                 sAddresses::_PadProxyPC_Patch = baseAddr + 0x00822A40;
-
                 sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x025B0900);
                 sAddresses::_delete_class = (void**)(baseAddr + 0x025A0F80);
                 ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x00790540);
@@ -107,7 +82,6 @@ namespace ACBEaglePatch
                 sAddresses::_addXenonJoy_Patch = baseAddr + 0x016DFD55;
                 sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x016DFD6C;
                 sAddresses::_PadProxyPC_Patch = baseAddr + 0x017786A0;
-
                 sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x026622A8);
                 sAddresses::_delete_class = (void**)(baseAddr + 0x0265E0F8);
                 ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x016F3ED0);
@@ -118,31 +92,7 @@ namespace ACBEaglePatch
             default:
                 return false;
             }
-
-            if (!AreAddressesResolved())
-            {
-                if (g_loader_ref)
-                    g_loader_ref->LogToConsole("[EaglePatch] Failed to resolve required addresses. Patch not applied.");
-                return false;
-            }
             return true;
-        }
-
-        GameVersion DetectVersion(uintptr_t baseAddr)
-        {
-            auto safeRead = [](uintptr_t addr, uint32_t& out) -> bool
-            {
-                if (IsBadReadPtr((void*)addr, sizeof(uint32_t))) return false;
-                out = *(uint32_t*)addr;
-                return true;
-            };
-
-            uint32_t v1 = 0, v2 = 0;
-            if (safeRead(baseAddr + 0x127A296, v1) && v1 == 0xFEEA3EF6)
-                return GameVersion::Version1;
-            if (safeRead(baseAddr + 0x0BE88C6, v2) && v2 == 0xFF6011A6)
-                return GameVersion::Version2;
-            return GameVersion::Unknown;
         }
     }
 
@@ -360,34 +310,8 @@ namespace ACBEaglePatch
         }
     };
 
-    void Init()
+    void InitController(uintptr_t baseAddr, GameVersion version)
     {
-        uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
-        if (!baseAddr) return;
-
-        GameVersion version = DetectVersion(baseAddr);
-        if (version == GameVersion::Unknown)
-        {
-            if (g_loader_ref)
-                g_loader_ref->LogToConsole("[EaglePatch] ACB executable not recognized; patch not applied.");
-            return;
-        }
-
-        if(g_loader_ref)
-        {
-            switch (version)
-            {
-            case GameVersion::Version1:
-                g_loader_ref->LogToConsole("[EaglePatch] Detected ACB Version 1 (marker 0xFEEA3EF6 @ +0x127A296)");
-                break;
-            case GameVersion::Version2:
-                g_loader_ref->LogToConsole("[EaglePatch] Detected ACB Version 2 (marker 0xFF6011A6 @ +0x0BE88C6)");
-                break;
-            default:
-                break;
-            }
-        }
-
         if (!ResolveAddresses(baseAddr, version))
             return;
 
@@ -396,5 +320,7 @@ namespace ACBEaglePatch
 
         static AutoAssembleWrapper<PadProxyUpdateHook> hook2;
         hook2.Activate();
+        
+        if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Controller patches applied.");
     }
 }

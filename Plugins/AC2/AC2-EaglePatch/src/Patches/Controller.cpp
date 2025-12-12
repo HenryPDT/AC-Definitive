@@ -1,8 +1,9 @@
-#include "EaglePatchACR.h"
+#include "../EaglePatch.h"
+#include "Controller.h"
 #include <AutoAssemblerKinda.h>
 #include <cstring>
 
-namespace ACREaglePatch
+namespace AC2EaglePatch
 {
     scimitar::PadProxyPC* pPad = nullptr;
     scimitar::PadXenon* padXenon = nullptr;
@@ -52,97 +53,46 @@ namespace ACREaglePatch
     uint32_t* sAddresses::_descriptor_var = nullptr;
     void** sAddresses::_delete_class = nullptr;
 
-    enum class GameVersion
-    {
-        Unknown,
-        Version1, // Marker at +0x0BBC866 == 0xFF602516
-        Version2  // Marker at +0x0BF0306 == 0xFF5E9006
-    };
-
     namespace
     {
-        // Basic address validation to avoid crashing on unknown builds
-        bool AreAddressesResolved()
-        {
-            return sAddresses::Pad_UpdateTimeStamps &&
-                sAddresses::Pad_ScaleStickValues &&
-                sAddresses::PadXenon_ctor &&
-                sAddresses::PadProxyPC_AddPad &&
-                sAddresses::_addXenonJoy_Patch &&
-                sAddresses::_addXenonJoy_JumpOut &&
-                sAddresses::_PadProxyPC_Patch &&
-                sAddresses::_descriptor_var &&
-                sAddresses::_delete_class &&
-                ac_getNewDescriptor &&
-                ac_getDeleteDescriptor &&
-                Gear::MemHook::pRef;
-        }
-
-        // Assign all per-version addresses; keep in one place to reduce copy/paste errors
         bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
         {
             switch (version)
             {
-            case GameVersion::Version1:
-                sAddresses::Pad_UpdateTimeStamps = baseAddr + 0x017BA0F0;
-                sAddresses::Pad_ScaleStickValues = baseAddr + 0x017BAB20;
-                sAddresses::PadXenon_ctor = baseAddr + 0x01793AA0;
-                sAddresses::PadProxyPC_AddPad = baseAddr + 0x01829C10;
-                sAddresses::_addXenonJoy_Patch = baseAddr + 0x01793875;
-                sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x0179389B;
-                sAddresses::_PadProxyPC_Patch = baseAddr + 0x01829230;
-
-                sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x025DF110);
-                sAddresses::_delete_class = (void**)(baseAddr + 0x025DB20C);
-                ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x01797C10);
-                ac_getDeleteDescriptor = (t_ac_getDeleteDescriptor)(baseAddr + 0x0176FD60);
-                Gear::MemHook::pRef = (Gear::MemHook***)(baseAddr + 0x025DB208);
+            case GameVersion::Version1: // Uplay
+                sAddresses::Pad_UpdateTimeStamps = baseAddr + 0x10B20C0;
+                sAddresses::Pad_ScaleStickValues = baseAddr + 0x10B2930;
+                sAddresses::PadXenon_ctor = baseAddr + 0x108CF50;
+                sAddresses::PadProxyPC_AddPad = baseAddr + 0x108C730;
+                sAddresses::_addXenonJoy_Patch = baseAddr + 0x108D885;
+                sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x108D89C;
+                sAddresses::_PadProxyPC_Patch = baseAddr + 0x108AFA0;
+                sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x1E3DDE8);
+                sAddresses::_delete_class = (void**)(baseAddr + 0x1E3A3A8);
+                ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x109CAD0);
+                ac_getDeleteDescriptor = (t_ac_getDeleteDescriptor)(baseAddr + 0x1066AE0);
+                Gear::MemHook::pRef = (Gear::MemHook***)(baseAddr + 0x1E3A3A4);
                 break;
 
-            case GameVersion::Version2:
-                sAddresses::Pad_UpdateTimeStamps = baseAddr + 0x017ED6B0;
-                sAddresses::Pad_ScaleStickValues = baseAddr + 0x017EE0E0;
-                sAddresses::PadXenon_ctor = baseAddr + 0x017C7240;
-                sAddresses::PadProxyPC_AddPad = baseAddr + 0x0185D1E0;
-                sAddresses::_addXenonJoy_Patch = baseAddr + 0x017C7015;
-                sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x017C703B;
-                sAddresses::_PadProxyPC_Patch = baseAddr + 0x0185C800;
-
-                sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x028D1C40);
-                sAddresses::_delete_class = (void**)(baseAddr + 0x028CDD3C);
-                ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x017CB3B0);
-                ac_getDeleteDescriptor = (t_ac_getDeleteDescriptor)(baseAddr + 0x017A34F0);
-                Gear::MemHook::pRef = (Gear::MemHook***)(baseAddr + 0x028CDD38);
+            case GameVersion::Version2: // Retail 1.01
+                sAddresses::Pad_UpdateTimeStamps = baseAddr + 0x5EE7D0;
+                sAddresses::Pad_ScaleStickValues = baseAddr + 0x5EF040;
+                sAddresses::PadXenon_ctor = baseAddr + 0x5C9080;
+                sAddresses::PadProxyPC_AddPad = baseAddr + 0x5C8860;
+                sAddresses::_addXenonJoy_Patch = baseAddr + 0x5C99A5;
+                sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x5C99BC;
+                sAddresses::_PadProxyPC_Patch = baseAddr + 0x5C71B0;
+                sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x1E14F20);
+                sAddresses::_delete_class = (void**)(baseAddr + 0x1E0CA08);
+                ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x5D9030);
+                ac_getDeleteDescriptor = (t_ac_getDeleteDescriptor)(baseAddr + 0x236A0);
+                Gear::MemHook::pRef = (Gear::MemHook***)(baseAddr + 0x1E0CA04);
                 break;
 
             default:
                 return false;
             }
-
-            if (!AreAddressesResolved())
-            {
-                if (g_loader_ref)
-                    g_loader_ref->LogToConsole("[EaglePatch] Failed to resolve required addresses. Patch not applied.");
-                return false;
-            }
             return true;
-        }
-
-        GameVersion DetectVersion(uintptr_t baseAddr)
-        {
-            auto safeRead = [](uintptr_t addr, uint32_t& out) -> bool
-            {
-                if (IsBadReadPtr((void*)addr, sizeof(uint32_t))) return false;
-                out = *(uint32_t*)addr;
-                return true;
-            };
-
-            uint32_t v1 = 0, v2 = 0;
-            if (safeRead(baseAddr + 0x0BBC866, v1) && v1 == 0xFF602516)
-                return GameVersion::Version1;
-            if (safeRead(baseAddr + 0x0BF0306, v2) && v2 == 0xFF5E9006)
-                return GameVersion::Version2;
-            return GameVersion::Unknown;
         }
     }
 
@@ -162,15 +112,15 @@ namespace ACREaglePatch
 
     // --- Wrapper Calls ---
     void scimitar::Pad::UpdatePad(InputBindings* a) {
-        ((void(__thiscall*)(Pad*, InputBindings*))vtable[12])(this, a);
+        ((void(__thiscall*)(Pad*, InputBindings*))vtable[15])(this, a);
     }
     void scimitar::Pad::UpdateTimeStamps() { ((void(__thiscall*)(Pad*))sAddresses::Pad_UpdateTimeStamps)(this); }
     void scimitar::Pad::ScaleStickValues() { ((void(__thiscall*)(Pad*))sAddresses::Pad_ScaleStickValues)(this); }
     scimitar::PadXenon* scimitar::PadXenon::_ctor(uint32_t padId) {
         return ((PadXenon * (__thiscall*)(PadXenon*, uint32_t))sAddresses::PadXenon_ctor)(this, padId);
     }
-    bool scimitar::PadProxyPC::AddPad(scimitar::Pad* a, PadType b, const wchar_t* c, uint16_t d, uint16_t e, int64_t f, int64_t g) {
-        return ((bool(__thiscall*)(PadProxyPC*, scimitar::Pad*, PadType, const wchar_t*, uint16_t, uint16_t, int64_t, int64_t))sAddresses::PadProxyPC_AddPad)(this, a, b, c, d, e, f, g);
+    bool scimitar::PadProxyPC::AddPad(scimitar::Pad* a, PadType b, const wchar_t* c, uint16_t d, uint16_t e) {
+        return ((bool(__thiscall*)(PadProxyPC*, scimitar::Pad*, PadType, const wchar_t*, uint16_t, uint16_t))sAddresses::PadProxyPC_AddPad)(this, a, b, c, d, e);
     }
     void scimitar::PadXenon::operator_new(size_t size, void** out) {
         *out = ac_allocate_wrapper(2, sizeof(PadXenon), ac_getNewDescriptor(sizeof(PadXenon), 16, *sAddresses::_descriptor_var), nullptr, nullptr, nullptr, 0, nullptr);
@@ -192,7 +142,7 @@ namespace ACREaglePatch
             padXenon->_ctor(activeIndex != -1 ? activeIndex : 0);
 
             // We add it, but we will manually manage its updates in the proxy hook to control the mapping
-            if (pPad->AddPad(padXenon, scimitar::Pad::PadType::XenonPad, L"XInput Controller 1", 5, 5, 0, 0)) {
+            if (pPad->AddPad(padXenon, scimitar::Pad::PadType::XenonPad, L"XInput Controller 1", 5, 5)) {
                 if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] XInput Controller successfully injected.");
             } else {
                 // Failed to add pad, cleanup memory to prevent leak
@@ -211,7 +161,7 @@ namespace ACREaglePatch
         // --- 1. Enforce Single Controller / Remove DInput ---
         // If original controllers were added (e.g. plugin loaded late), remove them.
         // We strictly allow only our injected padXenon in the Joy slots.
-        for (int i = scimitar::PadSets::Joy1; i <= scimitar::PadSets::Joy3; ++i) {
+        for (int i = scimitar::PadSets::Joy1; i <= scimitar::PadSets::Joy4; ++i) {
             if (thisPtr->pads[i].pad && thisPtr->pads[i].pad != padXenon) {
                 thisPtr->pads[i].pad = nullptr; // Detach unwanted controller
             }
@@ -360,34 +310,8 @@ namespace ACREaglePatch
         }
     };
 
-    void Init()
+    void InitController(uintptr_t baseAddr, GameVersion version)
     {
-        uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
-        if (!baseAddr) return;
-
-        GameVersion version = DetectVersion(baseAddr);
-        if (version == GameVersion::Unknown)
-        {
-            if (g_loader_ref)
-                g_loader_ref->LogToConsole("[EaglePatch] ACR executable not recognized; patch not applied.");
-            return;
-        }
-
-        if(g_loader_ref)
-        {
-            switch (version)
-            {
-            case GameVersion::Version1:
-                g_loader_ref->LogToConsole("[EaglePatch] Detected ACR Version 1 (marker 0xFF602516 @ +0x0BBC866)");
-                break;
-            case GameVersion::Version2:
-                g_loader_ref->LogToConsole("[EaglePatch] Detected ACR Version 2 (marker 0xFF5E9006 @ +0x0BF0306)");
-                break;
-            default:
-                break;
-            }
-        }
-
         if (!ResolveAddresses(baseAddr, version))
             return;
 
@@ -396,5 +320,7 @@ namespace ACREaglePatch
 
         static AutoAssembleWrapper<PadProxyUpdateHook> hook2;
         hook2.Activate();
+        
+        if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Controller patches applied.");
     }
 }

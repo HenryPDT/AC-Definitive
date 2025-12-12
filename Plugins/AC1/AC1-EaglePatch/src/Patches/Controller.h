@@ -1,14 +1,11 @@
 #pragma once
 #include <cstdint>
-#include <IPlugin.h>
-#include <Xinput.h> 
-
-// Global reference to the loader interface
-extern const PluginLoaderInterface* g_loader_ref;
+#include <Xinput.h>
+#include "../EaglePatch.h"
 
 namespace AC1EaglePatch
 {
-    void Init();
+    void InitController(uintptr_t baseAddr, GameVersion version);
 
     // --- Game Structures (scimitar) ---
     namespace scimitar
@@ -124,7 +121,3 @@ namespace AC1EaglePatch
     using t_ac_allocate = void* (__cdecl*)(int, uint32_t, void*, const void*, const char*, const char*, uint32_t, const char*);
     using t_ac_delete = void(__cdecl*)(void*, void*, const char*);
 }
-
-extern AC1EaglePatch::t_ac_getNewDescriptor ac_getNewDescriptor;
-extern AC1EaglePatch::t_ac_allocate ac_allocate;
-extern AC1EaglePatch::t_ac_delete ac_delete;
