@@ -4,6 +4,8 @@
 #include "EaglePatch.h"
 #include "Patches/Controller.h"
 #include "Patches/SkipIntro.h"
+#include "Patches/Graphics.h"
+#include "Patches/UplayBonus.h"
 
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
@@ -27,6 +29,8 @@ public:
         {
             AC2EaglePatch::InitController(baseAddr, version);
             AC2EaglePatch::InitSkipIntro(baseAddr, version);
+            AC2EaglePatch::InitGraphics(baseAddr, version);
+            AC2EaglePatch::InitUplayBonus(baseAddr, version);
         }
         else
             g_loader_ref->LogToConsole("[EaglePatch] Unknown Game Version!");

@@ -18,10 +18,10 @@ namespace AC1EaglePatch
         switch (version)
         {
         case GameVersion::Version1: // DX10
-            telemetryAddr = baseAddr + 0x130D798; // 0x170D798 - 0x400000
+            telemetryAddr = baseAddr + 0x130D798;
             break;
         case GameVersion::Version2: // DX9
-            telemetryAddr = baseAddr + 0x13382D8; // 0x017382D8 - 0x400000
+            telemetryAddr = baseAddr + 0x13382D8;
             break;
         default: return;
         }

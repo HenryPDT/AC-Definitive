@@ -92,12 +92,14 @@
     <ClCompile Include="src\Patches\Controller.cpp" />
     <ClCompile Include="src\Patches\SkipIntro.cpp" />
     <ClCompile Include="src\Patches\Telemetry.cpp" />
+    <ClCompile Include="src\Patches\Graphics.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\EaglePatch.h" />
     <ClInclude Include="src\Patches\Controller.h" />
     <ClInclude Include="src\Patches\SkipIntro.h" />
     <ClInclude Include="src\Patches\Telemetry.h" />
+    <ClInclude Include="src\Patches\Graphics.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\CommonLib\AutoAssemblerKinda\AutoAssemblerKinda.vcxproj">

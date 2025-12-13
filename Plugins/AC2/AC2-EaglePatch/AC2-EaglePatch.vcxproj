@@ -91,11 +91,15 @@
     <ClCompile Include="src\EaglePatch.cpp" />
     <ClCompile Include="src\Patches\Controller.cpp" />
     <ClCompile Include="src\Patches\SkipIntro.cpp" />
+    <ClCompile Include="src\Patches\Graphics.cpp" />
+    <ClCompile Include="src\Patches\UplayBonus.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\EaglePatch.h" />
     <ClInclude Include="src\Patches\Controller.h" />
     <ClInclude Include="src\Patches\SkipIntro.h" />
+    <ClInclude Include="src\Patches\Graphics.h" />
+    <ClInclude Include="src\Patches\UplayBonus.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\CommonLib\AutoAssemblerKinda\AutoAssemblerKinda.vcxproj">
