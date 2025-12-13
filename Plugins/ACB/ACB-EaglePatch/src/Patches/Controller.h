@@ -5,7 +5,7 @@
 
 namespace ACBEaglePatch
 {
-    void InitController(uintptr_t baseAddr, GameVersion version);
+    void InitController(uintptr_t baseAddr, GameVersion version, int keyboardLayout);
 
     // --- Game Structures (scimitar) ---
     namespace scimitar

@@ -158,7 +158,7 @@ namespace AC1EaglePatch
         }
     };
 
-    void InitGraphics(uintptr_t baseAddr, GameVersion version)
+    void InitGraphics(uintptr_t baseAddr, GameVersion version, bool enableMSAAFix, bool fixDX10Resolution)
     {
         // Multisampling Addresses
         uintptr_t ms1 = 0, ms2 = 0, ms3 = 0;
@@ -193,11 +193,14 @@ namespace AC1EaglePatch
         default: return;
         }
 
-        // Apply Multisampling Patch
-        static AutoAssembleWrapper<MultisamplingPatch> msPatch(ms1, ms2, ms3);
-        msPatch.Activate();
+        if (enableMSAAFix)
+        {
+            // Apply Multisampling Patch
+            static AutoAssembleWrapper<MultisamplingPatch> msPatch(ms1, ms2, ms3);
+            msPatch.Activate();
+        }
 
-        if (isDX10)
+        if (isDX10 && fixDX10Resolution)
         {
             // Apply Duplicate Resolution Fix
             static AutoAssembleWrapper<DX10ResolutionPatch> resPatch(dx10_check1, dx10_check2);

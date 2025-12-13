@@ -310,10 +310,12 @@ namespace ACREaglePatch
         }
     };
 
-    void InitController(uintptr_t baseAddr, GameVersion version)
+    void InitController(uintptr_t baseAddr, GameVersion version, int keyboardLayout)
     {
         if (!ResolveAddresses(baseAddr, version))
             return;
+
+        NEEDED_KEYBOARD_SET = keyboardLayout;
 
         static AutoAssembleWrapper<AddXenonJoyHook> hook1;
         hook1.Activate();

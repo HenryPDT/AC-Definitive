@@ -292,10 +292,13 @@ namespace AC1EaglePatch
         }
     };
 
-    void InitController(uintptr_t baseAddr, GameVersion version)
+    void InitController(uintptr_t baseAddr, GameVersion version, int keyboardLayout)
     {
         if (!ResolveAddresses(baseAddr, version))
             return;
+
+        // Set the global keyboard layout variable used in Hook_PadProxyPC_Update
+        NEEDED_KEYBOARD_SET = keyboardLayout;
 
         static AutoAssembleWrapper<AddXenonJoyHook> hook1;
         hook1.Activate();

@@ -4,9 +4,12 @@
 #include "EaglePatch.h"
 #include "Patches/Controller.h"
 #include "Patches/SkipIntro.h"
+#include <Serialization/Utils/FileSystem.h>
+#include <filesystem>
 
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
+ACBEaglePatch::Configuration g_config;
 static bool g_imgui_context_set = false;
 
 class ACBEaglePatchPlugin : public IPlugin
@@ -18,17 +21,34 @@ public:
     void OnPluginInit(const PluginLoaderInterface& loader_interface) override
     {
         g_loader_ref = &loader_interface;
-        g_loader_ref->LogToFile("[EaglePatch] Initializing...");
+        g_loader_ref->LogToFile("[ACB EaglePatch] Initializing...");
 
         uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
         auto version = ACBEaglePatch::DetectVersion(baseAddr);
+
+        // --- Load Configuration ---
+        HMODULE hModule = NULL;
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)PluginEntry, &hModule);
+        char modulePath[MAX_PATH];
+        GetModuleFileNameA(hModule, modulePath, MAX_PATH);
+        std::filesystem::path configPath = std::filesystem::path(modulePath).replace_extension(".json");
+
+        Serialization::JSON jsonConfig = Serialization::Utils::LoadJSONFromFile(configPath);
+        if (!jsonConfig.IsNull()) g_config.SectionFromJSON(jsonConfig);
+
+        Serialization::JSON outJson;
+        g_config.SectionToJSON(outJson);
+        Serialization::Utils::SaveJSONToFile(outJson, configPath);
+
         if (version != ACBEaglePatch::GameVersion::Unknown)
         {
-            ACBEaglePatch::InitController(baseAddr, version);
-            ACBEaglePatch::InitSkipIntro(baseAddr, version);
+            if (g_config.EnableXInput)
+                ACBEaglePatch::InitController(baseAddr, version, g_config.KeyboardLayout);
+            if (g_config.SkipIntroVideos)
+                ACBEaglePatch::InitSkipIntro(baseAddr, version);
         }
         else
-            g_loader_ref->LogToConsole("[EaglePatch] Unknown Game Version!");
+            g_loader_ref->LogToConsole("[ACB EaglePatch] Unknown Game Version!");
     }
 
     void OnGuiRender() override

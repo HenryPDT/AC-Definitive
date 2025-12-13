@@ -2,6 +2,7 @@
 #include <IPlugin.h>
 #include <cstdint>
 #include <windows.h>
+#include <Serialization/Config.h>
 
 // Global reference to the loader interface
 extern const PluginLoaderInterface* g_loader_ref;
@@ -13,6 +14,19 @@ namespace AC2EaglePatch
         Unknown,
         Version1, // Uplay build: marker at +0x92BA56 == 0xFF8968E6
         Version2  // Retail 1.01: marker at +0xF06056 == 0xFF2E4F96
+    };
+
+    struct Configuration : Serialization::ConfigSection
+    {
+        SECTION_CTOR(Configuration)
+
+        // Original EaglePatchAC2.ini mapping
+        PROPERTY(ImproveDrawDistance, bool, Serialization::BooleanAdapter, true)
+        PROPERTY(ImproveShadowMapResolution, bool, Serialization::BooleanAdapter, true)
+        PROPERTY(KeyboardLayout, int, Serialization::IntegerAdapter_template<int>, 0)
+        PROPERTY(SkipIntroVideos, bool, Serialization::BooleanAdapter, true)
+        PROPERTY(UPlayItems, bool, Serialization::BooleanAdapter, true)
+        PROPERTY(EnableXInput, bool, Serialization::BooleanAdapter, true)
     };
 
     inline GameVersion DetectVersion(uintptr_t baseAddr)

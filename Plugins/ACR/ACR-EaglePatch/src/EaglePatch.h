@@ -2,6 +2,7 @@
 #include <IPlugin.h>
 #include <cstdint>
 #include <windows.h>
+#include <Serialization/Config.h>
 
 // Global reference to the loader interface
 extern const PluginLoaderInterface* g_loader_ref;
@@ -13,6 +14,15 @@ namespace ACREaglePatch
         Unknown,
         Version1, // Marker at +0x0BBC866 == 0xFF602516
         Version2  // Marker at +0x0BF0306 == 0xFF5E9006
+    };
+
+    struct Configuration : Serialization::ConfigSection
+    {
+        SECTION_CTOR(Configuration)
+
+        PROPERTY(EnableXInput, bool, Serialization::BooleanAdapter, true)
+        PROPERTY(SkipIntroVideos, bool, Serialization::BooleanAdapter, true)
+        PROPERTY(KeyboardLayout, int, Serialization::IntegerAdapter_template<int>, 0)
     };
 
     inline GameVersion DetectVersion(uintptr_t baseAddr)

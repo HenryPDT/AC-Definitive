@@ -4,5 +4,5 @@
 
 namespace AC2EaglePatch
 {
-    void InitGraphics(uintptr_t baseAddr, GameVersion version);
+    void InitGraphics(uintptr_t baseAddr, GameVersion version, bool shadows, bool drawDistance);
 }

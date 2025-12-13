@@ -108,7 +108,7 @@ namespace AC2EaglePatch
         }
     };
 
-    void InitGraphics(uintptr_t baseAddr, GameVersion version)
+    void InitGraphics(uintptr_t baseAddr, GameVersion version, bool shadows, bool drawDistance)
     {
         uintptr_t shadowMapAddr = 0;
         uintptr_t clothAddr = 0, lodLevelAddr = 0, forceLod0Addr = 0, checkCharAddr = 0, checkCharOutAddr = 0;
@@ -137,15 +137,19 @@ namespace AC2EaglePatch
         }
 
         // Shadow Map
-        static AutoAssembleWrapper<ShadowMapPatch> shadowPatch(shadowMapAddr);
-        shadowPatch.Activate();
+        if (shadows) {
+            static AutoAssembleWrapper<ShadowMapPatch> shadowPatch(shadowMapAddr);
+            shadowPatch.Activate();
+        }
 
         // Draw Distance
-        static AutoAssembleWrapper<DrawDistancePatches> ddPatch(clothAddr);
-        ddPatch.Activate();
+        if (drawDistance) {
+            static AutoAssembleWrapper<DrawDistancePatches> ddPatch(clothAddr);
+            ddPatch.Activate();
 
-        static AutoAssembleWrapper<DrawDistanceHooks> ddHooks(forceLod0Addr, checkCharAddr, checkCharOutAddr, lodLevelAddr);
-        ddHooks.Activate();
+            static AutoAssembleWrapper<DrawDistanceHooks> ddHooks(forceLod0Addr, checkCharAddr, checkCharOutAddr, lodLevelAddr);
+            ddHooks.Activate();
+        }
 
         if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Graphics fixes applied.");
     }
