@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Header Files\SimpleJSON">
+      <UniqueIdentifier>{e2a3b4c5-d6e7-4f8a-9b0c-1d2e3f4a5b6d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Serialization">
+      <UniqueIdentifier>{f3b4c5d6-e7f8-4a9b-0c1d-2e3f4a5b6c7d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Serialization\Adapters">
+      <UniqueIdentifier>{a4b5c6d7-e8f9-4a0b-1c2d-3e4f5a6b7c8d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Serialization\Utils">
+      <UniqueIdentifier>{b5c6d7e8-f9a0-4b1c-2d3e-4f5a6b7c8d9e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Utils">
+      <UniqueIdentifier>{c6d7e8f9-a0b1-4c2d-3e4f-5a6b7c8d9e0f}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\SimpleJSON\json.hpp">
+      <Filter>Header Files\SimpleJSON</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\Serialization.h">
+      <Filter>Header Files\Serialization</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\Config.h">
+      <Filter>Header Files\Serialization</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\EnumFactory.h">
+      <Filter>Header Files\Serialization</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\UTF8.h">
+      <Filter>Header Files\Serialization</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\Adapters\BooleanAdapter.h">
+      <Filter>Header Files\Serialization\Adapters</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\Adapters\NumericAdapters.h">
+      <Filter>Header Files\Serialization\Adapters</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\Adapters\StringAdapter.h">
+      <Filter>Header Files\Serialization\Adapters</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\Adapters\EnumAdapter.h">
+      <Filter>Header Files\Serialization\Adapters</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Serialization\Utils\FileSystem.h">
+      <Filter>Header Files\Serialization\Utils</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Utils\FileSystem.cpp">
+      <Filter>Source Files\Utils</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
