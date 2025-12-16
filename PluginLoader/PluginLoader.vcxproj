@@ -241,10 +241,12 @@
   <ItemGroup>
     <ClCompile Include="src\ImGuiConsole.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\PluginLoaderConfig.cpp" />
     <ClCompile Include="src\PluginManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ImGuiConsole.h" />
+    <ClInclude Include="src\PluginLoaderConfig.h" />
     <ClInclude Include="src\PluginManager.h" />
   </ItemGroup>
   <ItemGroup>

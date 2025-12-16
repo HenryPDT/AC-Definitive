@@ -131,10 +131,15 @@ namespace BaseHook
         // Use settings for IniFilename
         io.IniFilename = (Data::pSettings && Data::pSettings->m_bSaveImGuiIni) ? "imgui.ini" : NULL;
         
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_DockingEnable;
         io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
         LoadSystemFonts();
         
         ImGui::StyleColorsDark();
+
+        // Tweak Docking Style
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowRounding = 0.0f; // Look better when docked
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f; // Opaque windows
     }
 }

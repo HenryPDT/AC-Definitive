@@ -15,7 +15,7 @@ static bool g_imgui_context_set = false;
 class ACBEaglePatchPlugin : public IPlugin
 {
 public:
-    const char* GetPluginName() override { return "ACB EaglePatch (Controller Support)"; }
+    const char* GetPluginName() override { return "ACB EaglePatch"; }
     uint32_t GetPluginVersion() override { return MAKE_PLUGIN_API_VERSION(1, 0); }
 
     void OnPluginInit(const PluginLoaderInterface& loader_interface) override

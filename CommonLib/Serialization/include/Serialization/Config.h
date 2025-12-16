@@ -5,6 +5,7 @@
 #include "Adapters/NumericAdapters.h"
 #include "Adapters/StringAdapter.h"
 #include "Adapters/EnumAdapter.h"
+#include "Adapters/KeyBindAdapter.h"
 #include <vector>
 #include <string>
 

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "base.h"
+#include <float.h>
 
 namespace BaseHook
 {
@@ -54,6 +55,12 @@ namespace BaseHook
             if (Data::bIsInitialized)
             {
                 Data::bIsRendering = true;
+
+                // Preserve FPU state
+                unsigned int original_fpu_cw = 0;
+                _controlfp_s(&original_fpu_cw, 0, 0);
+                _controlfp_s(nullptr, _CW_DEFAULT, 0xfffff);
+
                 ImGui_ImplDX11_NewFrame();
 
                 Data::bCallingImGui = true;
@@ -94,6 +101,9 @@ namespace BaseHook
 
                 if(pOldRTV) pOldRTV->Release();
                 if(pOldDSV) pOldDSV->Release();
+
+                // Restore FPU state
+                _controlfp_s(nullptr, original_fpu_cw, 0xfffff);
 
                 Data::bIsRendering = false;
             }

@@ -9,6 +9,10 @@
 #include "imgui_impl_dx9.h"
 #include <memory>
 #include <vector>
+#include "ImGuiCTX.h"
+#include "PluginLoaderConfig.h"
+#include "ImGuiConfigUtils.h"
+#include "KeyBind.h"
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -51,18 +55,25 @@ public:
     virtual void DrawOverlay() override
     {
         ImGuiIO& io = ImGui::GetIO();
+        io.FontGlobalScale = PluginLoaderConfig::g_Config.fontSize.get() / 13.0f;
 
         if (Globals::loaderInterface.m_ImGuiContext == nullptr)
             Globals::loaderInterface.m_ImGuiContext = ImGui::GetCurrentContext();
 
+        // Global docking support: Submit a DockSpace covering the whole viewport (background)
+        // This allows windows to be docked anywhere in the game window.
+        // We use PassthruCentralNode so the game is visible behind.
+        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+
+        // Handle console toggle mode (foreground window)
+        Globals::console.Draw("Console");
+
         // Only block input when our own UI is explicitly open (menu or foreground console),
-        // and only while our window is actually focused. This prevents alt-tabbing or
-        // background focus changes from leaving the game permanently input-blocked.
         HWND foreground = GetForegroundWindow();
         const bool is_focused = (foreground == BaseHook::Data::hWindow);
 
         bool bShouldBlock = is_focused &&
-            (BaseHook::Data::bShowMenu || Globals::console.mode == ConsoleMode::ForegroundAndFocusable);
+            (BaseHook::Data::bShowMenu || (Globals::console.mode == ConsoleMode::ForegroundAndFocusable));
 
         io.MouseDrawCursor = bShouldBlock;
 
@@ -90,24 +101,64 @@ public:
         }
 
         Globals::pluginManager.UpdatePlugins();
-        Globals::console.Draw("Console");
     }
 
     virtual void DrawMenu() override
     {
-        ImGui::ShowDemoWindow(&BaseHook::Data::bShowMenu);
-        
-        // if (ImGui::Begin("Plugin Loader", &BaseHook::Data::bShowMenu))
-        // {
-        //     const char* gameNames[] = { "Unknown", "AC1", "AC2", "ACB", "ACR" };
-        //     int gameIdx = (int)Globals::pluginManager.GetCurrentGame();
-        //     if (gameIdx < 0 || gameIdx > 4) gameIdx = 0;
-        //     ImGui::Text("Detected Game: %s", gameNames[gameIdx]);
-        //     ImGui::Separator();
-        //     Globals::pluginManager.DrawPluginMenu();
-        // }
-        // ImGui::End();
-        // Globals::pluginManager.RenderPluginMenus();
+        if (ImGuiCTX::Window window("AC Definitive", &BaseHook::Data::bShowMenu); window)
+        {
+            if (ImGuiCTX::TabBar tabBar("MainTabBar"); tabBar)
+            {
+                if (ImGuiCTX::Tab tabPlugins("Plugins"); tabPlugins)
+                {
+                    Globals::pluginManager.DrawPluginMenu();
+
+                    ImGui::Separator();
+                    const char* gameNames[] = { "Unknown", "AC1", "AC2", "ACB", "ACR" };
+                    int gameIdx = (int)Globals::pluginManager.GetCurrentGame();
+                    if (gameIdx < 0 || gameIdx > 4) gameIdx = 0;
+                    ImGui::Text("Detected Game: %s", gameNames[gameIdx]);
+                }
+
+                if (ImGuiCTX::Tab tabSettings("Settings"); tabSettings)
+                {
+                    ImGui::Checkbox("Fix DirectInput (Legacy Input)", &BaseHook::Data::bFixDirectInput);
+
+                    ImGui::Separator();
+                    ImGui::Text("Hotkeys");
+                    ImGui::KeyBindInput("Toggle Menu", PluginLoaderConfig::g_Config.hotkey_ToggleMenu.get());
+                    ImGui::KeyBindInput("Toggle Console", PluginLoaderConfig::g_Config.hotkey_ToggleConsole.get());
+
+                    ImGui::Separator();
+                    ImGui::Text("Appearance");
+                    ImGui::DragFloat("Font Size", &PluginLoaderConfig::g_Config.fontSize.get(), 0.1f, 8.0f, 32.0f);
+
+                    ImGui::Separator();
+                    if (ImGui::Button("Save Config"))
+                        PluginLoaderConfig::Save();
+                    ImGui::SameLine();
+                    if (ImGui::Button("Save Window Layout (imgui.ini)"))
+                        ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename);
+                    
+                    static bool show_demo = false;
+                    if (ImGui::Button("Show ImGui Demo Window"))
+                        show_demo = !show_demo;
+                    if (show_demo)
+                        ImGui::ShowDemoWindow(&show_demo);
+                }
+
+                if (ImGuiCTX::Tab tabAbout("About"); tabAbout)
+                {
+                    ImGui::Text("AC Definitive Framework");
+                    ImGui::Separator();
+                    ImGui::Text("Based on ACUFixes Plugin Loader.");
+                    ImGui::Text("ImGui Version: %s", IMGUI_VERSION);
+                }
+            }
+        }
+
+        // Render individual plugin GUIs (they might create their own windows)
+        Globals::pluginManager.RenderPluginMenus();
     }
 };
 
@@ -124,21 +175,19 @@ LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
     // Handle our own hotkeys, but only if an ImGui window doesn't want keyboard input.
     if (BaseHook::Data::bIsInitialized && !ImGui::GetIO().WantCaptureKeyboard)
     {
-        if (uMsg == WM_KEYDOWN)
+        // Use the event-based check for the message loop
+        if (PluginLoaderConfig::g_Config.hotkey_ToggleMenu.get().IsPressedEvent(uMsg, wParam))
         {
-            if (wParam == BaseHook::Keys::ToggleMenu)
-            {
-                BaseHook::Data::bShowMenu = !BaseHook::Data::bShowMenu;
-            }
-            else if (wParam == BaseHook::Keys::DetachDll)
-            {
-                BaseHook::Detach();
-                Globals::bShutdown = true;
-            }
-            else if (wParam == VK_OEM_3) // Tilde key
-            {
-                Globals::console.ToggleVisibility();
-            }
+            BaseHook::Data::bShowMenu = !BaseHook::Data::bShowMenu;
+        }
+        else if (uMsg == WM_KEYDOWN && wParam == BaseHook::Keys::DetachDll)
+        {
+            BaseHook::Detach();
+            Globals::bShutdown = true;
+        }
+        else if (PluginLoaderConfig::g_Config.hotkey_ToggleConsole.get().IsPressedEvent(uMsg, wParam))
+        {
+            Globals::console.ToggleVisibility();
         }
     }
 
@@ -210,6 +259,8 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
     Globals::loaderInterface.GetImGuiContext = GetImGuiContext_Impl;
 
     Globals::pluginManager.Init(Globals::hModule, Globals::loaderInterface);
+    PluginLoaderConfig::Init(Globals::hModule);
+    PluginLoaderConfig::Load();
 
     static MySettings settings(WndProc);
     BaseHook::Start(&settings);
