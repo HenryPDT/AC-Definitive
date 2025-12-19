@@ -46,6 +46,9 @@ public:
 
     // Called every frame, regardless of menu state.
     virtual void OnUpdate() {}
+
+    // Optional: Expose a pointer to an interface/controller for other plugins to use.
+    virtual void* GetInterface() { return nullptr; }
 };
 
 // The interface the loader provides to plugins.
@@ -59,6 +62,7 @@ public:
     void (*LogToFile)(const char* fmt, ...) = nullptr;
     ImGuiContext* m_ImGuiContext = nullptr;
     ImGuiContext* (*GetImGuiContext)() = nullptr;
+    void* (*GetPluginInterface)(const char* pluginName) = nullptr;
 };
 
 // Each plugin must export this function. It should return a new instance of your plugin's main class.

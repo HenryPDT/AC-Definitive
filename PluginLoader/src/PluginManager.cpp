@@ -2,6 +2,7 @@
 #include "log.h"
 #include "imgui.h"
 #include <filesystem>
+#include <algorithm>
 
 void PluginManager::Init(HMODULE loaderModule, PluginLoaderInterface& loaderInterface)
 {
@@ -57,6 +58,18 @@ void PluginManager::DetectGame()
     LOG_INFO("Detected game: %d", (int)m_currentGame);
 }
 
+void* PluginManager::GetPluginInterface(const std::string& name)
+{
+    for (const auto& plugin : m_plugins)
+    {
+        if (plugin.name == name)
+        {
+            return plugin.instance->GetInterface();
+        }
+    }
+    return nullptr;
+}
+
 void PluginManager::LoadPlugins(PluginLoaderInterface& loaderInterface)
 {
     char loaderPath[MAX_PATH];
@@ -69,54 +82,60 @@ void PluginManager::LoadPlugins(PluginLoaderInterface& loaderInterface)
         return;
     }
 
+    std::vector<std::filesystem::path> pluginFiles;
     for (const auto& entry : std::filesystem::directory_iterator(pluginDir))
     {
         if (entry.path().extension() == ".asi")
         {
-            LOG_INFO("Attempting to load plugin: %s", entry.path().string().c_str());
-            HMODULE hPlugin = LoadLibraryW(entry.path().wstring().c_str());
-            if (hPlugin)
-            {
-                auto pluginEntry = (PluginEntrypoint)GetProcAddress(hPlugin, "PluginEntry");
-                if (pluginEntry)
-                {
-                    IPlugin* plugin_instance = pluginEntry();
-                    if (plugin_instance)
-                    {
-                        uint32_t pluginVersion = plugin_instance->GetPluginAPIVersion();
-                        uint32_t loaderVersion = g_PluginLoaderAPIVersion;
-
-                        // Check for Major version mismatch (ABI break) or if plugin is newer than loader
-                        if ((pluginVersion >> 16) != (loaderVersion >> 16) || pluginVersion > loaderVersion)
-                        {
-                            LOG_ERROR("Plugin %s is incompatible. Plugin Version: %d.%d, Loader Version: %d.%d",
-                                entry.path().string().c_str(),
-                                pluginVersion >> 16, pluginVersion & 0xFFFF,
-                                loaderVersion >> 16, loaderVersion & 0xFFFF);
-                            delete plugin_instance;
-                            FreeLibrary(hPlugin);
-                            continue;
-                        }
-                        LOG_INFO("Loaded plugin: %s", plugin_instance->GetPluginName());
-                        m_plugins.emplace_back(hPlugin, std::unique_ptr<IPlugin>(plugin_instance), std::string(plugin_instance->GetPluginName()));
-                        plugin_instance->OnPluginInit(loaderInterface);
-                    }
-                    else
-                    {
-                        LOG_ERROR("PluginEntry for %s returned nullptr.", entry.path().string().c_str());
-                        FreeLibrary(hPlugin);
-                    }
-                }
-                else
-                {
-                    LOG_ERROR("Could not find PluginEntry export in %s", entry.path().string().c_str());
-                    FreeLibrary(hPlugin);
-                }
-            }
-            else
-            {
-                LOG_ERROR("Could not load plugin: %s. Error: %lu", entry.path().string().c_str(), GetLastError());
-            }
+            pluginFiles.push_back(entry.path());
         }
+    }
+
+    std::sort(pluginFiles.begin(), pluginFiles.end());
+
+    for (const auto& path : pluginFiles)
+    {
+        LOG_INFO("Attempting to load plugin: %s", path.string().c_str());
+        HMODULE hPlugin = LoadLibraryW(path.wstring().c_str());
+        if (!hPlugin)
+        {
+            LOG_ERROR("Could not load plugin: %s. Error: %lu", path.string().c_str(), GetLastError());
+            continue;
+        }
+
+        auto pluginEntry = (PluginEntrypoint)GetProcAddress(hPlugin, "PluginEntry");
+        if (!pluginEntry)
+        {
+            LOG_ERROR("Could not find PluginEntry export in %s", path.string().c_str());
+            FreeLibrary(hPlugin);
+            continue;
+        }
+
+        IPlugin* plugin_instance = pluginEntry();
+        if (!plugin_instance)
+        {
+            LOG_ERROR("PluginEntry for %s returned nullptr.", path.string().c_str());
+            FreeLibrary(hPlugin);
+            continue;
+        }
+
+        uint32_t pluginVersion = plugin_instance->GetPluginAPIVersion();
+        uint32_t loaderVersion = g_PluginLoaderAPIVersion;
+
+        // Check for Major version mismatch (ABI break) or if plugin is newer than loader
+        if ((pluginVersion >> 16) != (loaderVersion >> 16) || pluginVersion > loaderVersion)
+        {
+            LOG_ERROR("Plugin %s is incompatible. Plugin Version: %d.%d, Loader Version: %d.%d",
+                path.string().c_str(),
+                pluginVersion >> 16, pluginVersion & 0xFFFF,
+                loaderVersion >> 16, loaderVersion & 0xFFFF);
+            delete plugin_instance;
+            FreeLibrary(hPlugin);
+            continue;
+        }
+
+        LOG_INFO("Loaded plugin: %s", plugin_instance->GetPluginName());
+        m_plugins.emplace_back(hPlugin, std::unique_ptr<IPlugin>(plugin_instance), std::string(plugin_instance->GetPluginName()));
+        plugin_instance->OnPluginInit(loaderInterface);
     }
 }

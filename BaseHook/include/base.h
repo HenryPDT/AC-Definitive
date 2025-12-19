@@ -41,6 +41,7 @@ namespace BaseHook
         extern std::atomic<bool> bIsDetached; // Changed to atomic for thread safety
         extern bool              bBlockInput;
         extern std::atomic<bool> bIsRendering;
+        extern bool              bGraphicsInitialized;
         extern bool              bFixDirectInput; // Moved here for global visibility
         extern WndProc_t         oWndProc;
 
@@ -76,6 +77,8 @@ namespace BaseHook
     namespace Hooks
     {
         LRESULT CALLBACK WndProc_Base(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+        void FinishInitialization(); // Deferred initialization
 
         // Hook declarations
         HRESULT __stdcall hkEndScene(LPDIRECT3DDEVICE9 pDevice);

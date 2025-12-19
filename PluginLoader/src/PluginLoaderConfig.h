@@ -25,4 +25,5 @@ namespace PluginLoaderConfig {
     void Init(HMODULE hModule);
     void Load();
     void Save();
+    void CheckHotReload();
 }

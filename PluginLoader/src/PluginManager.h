@@ -43,6 +43,7 @@ public:
     void RenderPluginMenus();
     void DrawPluginMenu();
     Game GetCurrentGame() const { return m_currentGame; }
+    void* GetPluginInterface(const std::string& name);
 
 private:
     void DetectGame();

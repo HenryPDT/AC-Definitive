@@ -43,6 +43,7 @@ ImGuiContext* GetImGuiContext_Impl()
 }
 
 Game GetCurrentGame_Impl() { return Globals::pluginManager.GetCurrentGame(); }
+void* GetPluginInterface_Impl(const char* pluginName) { return Globals::pluginManager.GetPluginInterface(pluginName); }
 void PluginLoaderInterface_RequestUnload(HMODULE pluginHandle) { /* Not implemented for now */ }
 
 class MySettings : public BaseHook::Settings
@@ -257,6 +258,7 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
     Globals::loaderInterface.LogToConsole = LogUnified;
     Globals::loaderInterface.RequestUnloadPlugin = PluginLoaderInterface_RequestUnload;
     Globals::loaderInterface.GetImGuiContext = GetImGuiContext_Impl;
+    Globals::loaderInterface.GetPluginInterface = GetPluginInterface_Impl;
 
     Globals::pluginManager.Init(Globals::hModule, Globals::loaderInterface);
     PluginLoaderConfig::Init(Globals::hModule);
@@ -270,6 +272,7 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
 
     while (!Globals::bShutdown)
     {
+        PluginLoaderConfig::CheckHotReload();
         Sleep(100);
     }
 

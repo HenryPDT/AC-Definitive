@@ -8,6 +8,10 @@ namespace BaseHook
         void InitDirectInput();
         void InitXInput();
 
+        // Forward declarations
+        void InstallWndProcHook();
+        void RestoreWndProc();
+
         namespace
         {
             const char* RenderTypeToString(kiero::RenderType::Enum type)
@@ -73,50 +77,93 @@ namespace BaseHook
                 Data::hWindow = context.bestHandle;
                 return Data::hWindow;
             }
+
+            // CreateWindowEx Hooks
+            typedef HWND(WINAPI* CreateWindowExA_t)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+            typedef HWND(WINAPI* CreateWindowExW_t)(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+
+            CreateWindowExA_t oCreateWindowExA = nullptr;
+            CreateWindowExW_t oCreateWindowExW = nullptr;
+
+            std::atomic<bool> g_WindowFound = false;
+            long g_MaxArea = 0;
+
+            HWND WINAPI hkCreateWindowExA(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
+            {
+                HWND hWnd = oCreateWindowExA(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+                if (hWnd && !hWndParent) // Ignore child windows
+                {
+                    long area = nWidth * nHeight;
+                    // If we haven't found a window yet, or this one is "better" (larger), take it.
+                    if (!g_WindowFound || area > g_MaxArea)
+                    {
+                        if (g_WindowFound)
+                        {
+                            LOG_INFO("Switching to better window (Area: %ld > %ld): %p", area, g_MaxArea, hWnd);
+                            RestoreWndProc(); // Unhook the previous one
+                        }
+
+                        LOG_INFO("Caught CreateWindowExA: %p (Area: %ld)", hWnd, area);
+                        Data::hWindow = hWnd;
+                        g_MaxArea = area;
+                        g_WindowFound = true;
+                        InstallWndProcHook();
+                    }
+                }
+                return hWnd;
+            }
+
+            HWND WINAPI hkCreateWindowExW(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
+            {
+                HWND hWnd = oCreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+                if (hWnd && !hWndParent)
+                {
+                    long area = nWidth * nHeight;
+                    if (!g_WindowFound || area > g_MaxArea)
+                    {
+                        if (g_WindowFound)
+                        {
+                            LOG_INFO("Switching to better window (Area: %ld > %ld): %p", area, g_MaxArea, hWnd);
+                            RestoreWndProc();
+                        }
+
+                        LOG_INFO("Caught CreateWindowExW: %p (Area: %ld)", hWnd, area);
+                        Data::hWindow = hWnd;
+                        g_MaxArea = area;
+                        g_WindowFound = true;
+                        InstallWndProcHook();
+                    }
+                }
+                return hWnd;
+            }
         }
 
-        bool Init()
+        void InstallWndProcHook()
         {
-            // CRITICAL FIX: Initialize MinHook explicitly before creating any input hooks.
-            // Kiero initializes it too, but we need it earlier for input.
-            if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED)
-            {
-                LOG_ERROR("Failed to initialize MinHook.");
-                return false;
+            if (!Data::hWindow) return;
+            
+            // Just hook WndProc. Defer graphics init to FinishInitialization().
+            if (Data::oWndProc == nullptr) {
+                 Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
+                 LOG_INFO("WndProc Hooked via CreateWindow. Original: %p", Data::oWndProc);
             }
 
-            // Ensure settings exist
-            if (!Data::pSettings) return false;
-
-            // 1. Hook Inputs early
-            // Now safe to call because MinHook is initialized.
-            InitDirectInput();
-            InitXInput();
-
-            // 2. Initialize Kiero
-            if (kiero::init(kiero::RenderType::Auto) != kiero::Status::Success)
-            {
-                LOG_ERROR("Kiero initialization failed.");
-                return false;
-            }
-
-            kiero::RenderType::Enum type = kiero::getRenderType();
-            LOG_INFO("Render Type: %s (%d)", RenderTypeToString(type), type);
-
-            // 3. Find Window
-            int attempts = 0;
-            while (FindGameWindow() == NULL)
-            {
-                Sleep(100);
-                if (++attempts > 100) { // 10 second timeout
-                    LOG_ERROR("Timeout waiting for game window.");
-                    return false;
-                }
-            }
-
+            // Always notify DirectInput about the current window (important for window switching)
             NotifyDirectInputWindow(Data::hWindow);
 
-            // 4. Bind Graphics Hooks
+            // Force initialization immediately. 
+            FinishInitialization();
+        }
+
+        void FinishInitialization()
+        {
+            if (Data::bGraphicsInitialized) return;
+            Data::bGraphicsInitialized = true; // Set flag immediately to prevent re-entry
+
+            LOG_INFO("Finishing Initialization for Window: %p", Data::hWindow);
+
+            // Bind Graphics Hooks
+            kiero::RenderType::Enum type = kiero::getRenderType();
             if (type == kiero::RenderType::D3D11) {
                 kiero::bind(8, (void**)&Data::oPresent, hkPresentDX11);
                 kiero::bind(13, (void**)&Data::oResizeBuffers, hkResizeBuffersDX11);
@@ -130,15 +177,56 @@ namespace BaseHook
                 kiero::bind(16, (void**)&Data::oReset, hkReset);
             }
             else {
-                LOG_ERROR("Unsupported render type.");
+                LOG_ERROR("Unsupported render type in FinishInitialization.");
+            }
+
+            // Disable CreateWindow hooks as we are done
+            if (oCreateWindowExA) MH_DisableHook((LPVOID)GetProcAddress(GetModuleHandleA("user32.dll"), "CreateWindowExA"));
+            if (oCreateWindowExW) MH_DisableHook((LPVOID)GetProcAddress(GetModuleHandleA("user32.dll"), "CreateWindowExW"));
+        }
+
+        bool Init()
+        {
+            // CRITICAL FIX: Initialize MinHook explicitly before creating any input hooks.
+            if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED)
+            {
+                LOG_ERROR("Failed to initialize MinHook.");
                 return false;
             }
 
-            // 5. Hook WndProc last
-            if (Data::hWindow) {
-                 Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
-                 LOG_INFO("WndProc Hooked. Original: %p", Data::oWndProc);
+            // Ensure settings exist
+            if (!Data::pSettings) return false;
+
+            // 1. Hook Inputs early
+            InitDirectInput();
+            InitXInput();
+
+            // 2. Initialize Kiero (creates dummy device to find addresses)
+            if (kiero::init(kiero::RenderType::Auto) != kiero::Status::Success)
+            {
+                LOG_ERROR("Kiero initialization failed.");
+                return false;
             }
+
+            kiero::RenderType::Enum type = kiero::getRenderType();
+            LOG_INFO("Render Type: %s (%d)", RenderTypeToString(type), type);
+
+            // 3. Check if Window already exists (Late Injection)
+            if (FindGameWindow())
+            {
+                LOG_INFO("Window already exists, hooking immediately.");
+                InstallWndProcHook();
+                return true;
+            }
+
+            // 4. Hook CreateWindowEx (Early Injection)
+            LOG_INFO("Window not found, hooking CreateWindowEx.");
+            
+            MH_CreateHookApi(L"user32.dll", "CreateWindowExA", hkCreateWindowExA, (LPVOID*)&oCreateWindowExA);
+            MH_CreateHookApi(L"user32.dll", "CreateWindowExW", hkCreateWindowExW, (LPVOID*)&oCreateWindowExW);
+            
+            MH_EnableHook((LPVOID)GetProcAddress(GetModuleHandleA("user32.dll"), "CreateWindowExA"));
+            MH_EnableHook((LPVOID)GetProcAddress(GetModuleHandleA("user32.dll"), "CreateWindowExW"));
 
             return true;
         }
@@ -160,7 +248,6 @@ namespace BaseHook
 
             if (ImGui::GetCurrentContext())
             {
-                // Cleanup backend specific
                 auto type = kiero::getRenderType();
                 if (type == kiero::RenderType::D3D9) {
                     ImGui_ImplDX9_Shutdown();
@@ -180,10 +267,7 @@ namespace BaseHook
                 ImGui::DestroyContext();
             }
 
-            // Clean up internal input maps
             CleanupDirectInput();
-
-            // Unhook Graphics
             kiero::shutdown();
         }
     }

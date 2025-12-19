@@ -13,6 +13,7 @@ namespace BaseHook
         std::atomic<bool> bIsDetached = false;
         bool              bBlockInput = false;
         std::atomic<bool> bIsRendering = false;
+        bool              bGraphicsInitialized = false;
         bool              bFixDirectInput = true;
         Settings*         pSettings = nullptr;
         WndProc_t         oWndProc = nullptr;
