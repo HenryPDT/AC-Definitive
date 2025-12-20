@@ -13,6 +13,7 @@
 #include "PluginLoaderConfig.h"
 #include "ImGuiConfigUtils.h"
 #include "KeyBind.h"
+#include "CpuAffinity.h"
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -124,6 +125,68 @@ public:
                 if (ImGuiCTX::Tab tabSettings("Settings"); tabSettings)
                 {
                     ImGui::Checkbox("Fix DirectInput (Legacy Input)", &BaseHook::Data::bFixDirectInput);
+
+                    ImGui::Separator();
+                    ImGui::Text("CPU Affinity");
+
+                    static uint64_t systemAffinity = CpuAffinity::GetSystemAffinityMask();
+                    uint64_t& currentMask = PluginLoaderConfig::g_Config.CpuAffinityMask.get();
+
+                    // --- Presets Row 1 ---
+                    if (ImGui::Button("Default (All)")) {
+                        currentMask = systemAffinity;
+                        CpuAffinity::Apply(currentMask);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Disable SMT")) {
+                        // Keep only even cores (0, 2, 4...) -> 01010101... -> 0x5555...
+                        currentMask = systemAffinity & 0x5555555555555555ULL;
+                        CpuAffinity::Apply(currentMask);
+                    }
+
+                    // --- Presets Row 2 (Game Specific) ---
+                    if (ImGui::Button("AC1 Fix (<32 Cores)")) {
+                        // 0x7FFFFFFF is 31 bits set to 1. AND with system to ensure we don't enable non-existent cores.
+                        currentMask = 0x7FFFFFFF & systemAffinity;
+                        CpuAffinity::Apply(currentMask);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("AC2/B/R Fix (No Core 0)")) {
+                        currentMask = systemAffinity & ~1ULL;
+                        CpuAffinity::Apply(currentMask);
+                    }
+
+                    ImGui::Dummy(ImVec2(0, 5));
+                    ImGui::Text("Manual Core Selection:");
+
+                    // Scrollable Child Window for Cores
+                    if (ImGui::BeginChild("CpuList", ImVec2(0, 150), true, ImGuiWindowFlags_None))
+                    {
+                        ImGui::Columns(2, "CpuCols", false); // 2 Columns, no border between them
+                        for (int i = 0; i < 64; ++i)
+                        {
+                            // Stop drawing if we exceed system core count
+                            if (!((systemAffinity >> i) & 1)) break;
+
+                            char label[32];
+                            snprintf(label, sizeof(label), "CPU %d", i);
+
+                            bool enabled = (currentMask >> i) & 1;
+                            if (ImGui::Checkbox(label, &enabled))
+                            {
+                                if (enabled) currentMask |= (1ULL << i);
+                                else currentMask &= ~(1ULL << i);
+
+                                // Prevent disabling all cores (crash prevention)
+                                if (currentMask == 0) currentMask = (1ULL << i); 
+
+                                CpuAffinity::Apply(currentMask);
+                            }
+                            ImGui::NextColumn();
+                    }
+                    ImGui::EndChild();
+                        ImGui::Columns(1); // Reset columns
+                    }
 
                     ImGui::Separator();
                     ImGui::Text("Hotkeys");
@@ -263,6 +326,28 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
     Globals::pluginManager.Init(Globals::hModule, Globals::loaderInterface);
     PluginLoaderConfig::Init(Globals::hModule);
     PluginLoaderConfig::Load();
+
+    // Auto-apply CPU defaults if not set and game detected
+    Game g = Globals::pluginManager.GetCurrentGame();
+    uint64_t systemMask = CpuAffinity::GetSystemAffinityMask();
+
+    if (PluginLoaderConfig::g_Config.CpuAffinityMask == 0) // First run / Not set
+    {
+        if (g == Game::AC1) {
+            LOG_INFO("First Run: Auto-applying AC1 CPU Limit (31 cores).");
+            PluginLoaderConfig::g_Config.CpuAffinityMask = 0x7FFFFFFF & systemMask;
+        }
+        else if (g == Game::AC2 || g == Game::ACB || g == Game::ACR) {
+            LOG_INFO("First Run: Auto-applying AC2/Brotherhood/Revelations Core 0 Fix.");
+            PluginLoaderConfig::g_Config.CpuAffinityMask = systemMask & ~1ULL;
+        }
+        else {
+            PluginLoaderConfig::g_Config.CpuAffinityMask = systemMask;
+        }
+        PluginLoaderConfig::Save(); // Save the auto-applied settings immediately
+    }
+
+    CpuAffinity::Apply(PluginLoaderConfig::g_Config.CpuAffinityMask);
 
     static MySettings settings(WndProc);
     BaseHook::Start(&settings);

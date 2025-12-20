@@ -243,11 +243,13 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\PluginLoaderConfig.cpp" />
     <ClCompile Include="src\PluginManager.cpp" />
+    <ClCompile Include="src\CpuAffinity.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\ImGuiConsole.h" />
     <ClInclude Include="src\PluginLoaderConfig.h" />
     <ClInclude Include="src\PluginManager.h" />
+    <ClInclude Include="src\CpuAffinity.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CommonLib\Utils\Utils.vcxproj">

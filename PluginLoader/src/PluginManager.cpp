@@ -51,6 +51,7 @@ void PluginManager::DetectGame()
     std::string exeName = gamePath.filename().string();
 
     if (_stricmp(exeName.c_str(), "AssassinsCreed_Dx9.exe") == 0) m_currentGame = Game::AC1;
+    else if (_stricmp(exeName.c_str(), "AssassinsCreed_Dx10.exe") == 0) m_currentGame = Game::AC1;
     else if (_stricmp(exeName.c_str(), "AssassinsCreedIIGame.exe") == 0) m_currentGame = Game::AC2;
     else if (_stricmp(exeName.c_str(), "ACBSP.exe") == 0) m_currentGame = Game::ACB;
     else if (_stricmp(exeName.c_str(), "ACRSP.exe") == 0) m_currentGame = Game::ACR;
