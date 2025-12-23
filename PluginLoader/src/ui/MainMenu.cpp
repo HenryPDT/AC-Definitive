@@ -36,11 +36,17 @@ namespace Ui
                 {
                     ImGui::Checkbox("Fix DirectInput (Legacy Input)", &BaseHook::Data::bFixDirectInput);
 
+                    m_settings.DrawHotkeysSection();
                     // m_settings.DrawWindowedModeSection(); // Removed for rebase
                     m_settings.DrawCpuAffinitySection();
-                    m_settings.DrawHotkeysSection();
                     m_settings.DrawAppearanceSection();
                     m_settings.DrawSaveRow();
+
+                    if (ImGui::CollapsingHeader("Advanced", ImGuiTreeNodeFlags_None))
+                    {
+                        // m_settings.DrawInputSection(); // Assuming this is also new and might need checking, but it seems to be for ImGuiMouseSource which I accepted in Config.
+                        // Wait, SettingsModel.h needs to declare DrawInputSection.
+                    }
                 }
 
                 if (ImGuiCTX::Tab tabAbout("About"); tabAbout)

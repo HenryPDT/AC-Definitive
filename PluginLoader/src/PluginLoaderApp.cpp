@@ -24,6 +24,31 @@ PluginLoaderApp* PluginLoaderApp::s_instance = nullptr;
 
 namespace
 {
+    bool IsMouseButtonsOrWheelMessage(UINT msg)
+    {
+        switch (msg)
+        {
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONDOWN:
+        case WM_MBUTTONUP:
+        case WM_XBUTTONDOWN:
+        case WM_XBUTTONUP:
+        case WM_MOUSEWHEEL:
+        case WM_MOUSEHWHEEL:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool ShouldImGuiMouseButtonsUseDirectInput()
+    {
+        return PluginLoaderConfig::g_Config.ImGuiMouseSource.get() == PluginLoaderConfig::ImGuiMouseInputSource::DirectInput;
+    }
+
     // Sink that only pushes to the on-screen console.
     void LogConsoleSink(const char* text)
     {
@@ -61,9 +86,13 @@ namespace
 
     LRESULT __stdcall LoaderWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
-        // Always feed ImGui (it needs to see mouse messages to keep internal state coherent).
+        // Feed ImGui. To avoid double mouse input, optionally filter mouse messages when DirectInput drives ImGui mouse.
         if (BaseHook::Data::bIsInitialized)
-            ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+        {
+            // Always allow Win32 mouse movement into ImGui; only filter buttons/wheel when DirectInput injects them.
+            if (!ShouldImGuiMouseButtonsUseDirectInput() || !IsMouseButtonsOrWheelMessage(uMsg))
+                ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+        }
 
         // Handle our own hotkeys, but only if an ImGui window doesn't want keyboard input.
         if (BaseHook::Data::bIsInitialized && !ImGui::GetIO().WantCaptureKeyboard)
@@ -166,6 +195,8 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
         const HWND foreground = GetForegroundWindow();
         const bool is_focused = (foreground == BaseHook::Data::hWindow);
         const ConsoleMode cm = (PluginLoaderApp::Get() ? PluginLoaderApp::Get()->GetConsole().mode : ConsoleMode::Hidden);
+
+        BaseHook::Data::bImGuiMouseButtonsFromDirectInput = ShouldImGuiMouseButtonsUseDirectInput();
 
         const auto cap = InputCapture::Compute(is_focused, BaseHook::Data::bShowMenu, cm);
 

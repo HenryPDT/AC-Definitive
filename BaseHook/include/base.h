@@ -43,6 +43,11 @@ namespace BaseHook
         extern std::atomic<bool> bIsRendering;
         extern bool              bGraphicsInitialized;
         extern bool              bFixDirectInput; // Moved here for global visibility
+        // Controls how overlay (ImGui) mouse buttons/wheel are fed:
+        // - false: Win32 messages feed ImGui mouse buttons/wheel
+        // - true:  DirectInput feeds ImGui mouse buttons/wheel (via ApplyBufferedInput)
+        // Overlay mouse movement + keyboard remain Win32/WndProc always.
+        extern bool              bImGuiMouseButtonsFromDirectInput;
         extern WndProc_t         oWndProc;
 
         // Input Management
@@ -70,7 +75,6 @@ namespace BaseHook
 
     namespace Keys
     {
-        extern UINT ToggleMenu;
         extern UINT DetachDll;
     }
 

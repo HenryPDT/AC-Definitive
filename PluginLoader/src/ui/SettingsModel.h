@@ -36,6 +36,7 @@ public:
     void DrawCpuAffinitySection();
     void DrawHotkeysSection();
     void DrawAppearanceSection();
+    void DrawInputSection();
 
     bool DrawSaveRow(); // returns true if saved
 

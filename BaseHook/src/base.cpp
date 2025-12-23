@@ -15,6 +15,7 @@ namespace BaseHook
         std::atomic<bool> bIsRendering = false;
         bool              bGraphicsInitialized = false;
         bool              bFixDirectInput = true;
+        bool              bImGuiMouseButtonsFromDirectInput = false;
         Settings*         pSettings = nullptr;
         WndProc_t         oWndProc = nullptr;
 
@@ -40,7 +41,6 @@ namespace BaseHook
 
     namespace Keys
     {
-        UINT ToggleMenu = VK_INSERT;
         UINT DetachDll = VK_END;
     }
 

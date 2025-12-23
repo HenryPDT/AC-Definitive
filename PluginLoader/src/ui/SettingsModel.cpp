@@ -20,6 +20,30 @@ void SettingsModel::LoadFromConfig()
     m_draft.fontSize = PluginLoaderConfig::g_Config.fontSize.get();
 }
 
+void SettingsModel::DrawInputSection()
+{
+    ImGui::Separator();
+    ImGui::Text("Input (Overlay)");
+
+    const char* items[] = { "Win32/WndProc", "DirectInput" };
+    int mode = (int)PluginLoaderConfig::g_Config.ImGuiMouseSource.get();
+    if (mode < 0 || mode > 1) mode = 0;
+    if (ImGui::Combo("ImGui Mouse Source", &mode, items, IM_ARRAYSIZE(items)))
+    {
+        PluginLoaderConfig::g_Config.ImGuiMouseSource = (PluginLoaderConfig::ImGuiMouseInputSource)mode;
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip(
+            "Controls how the overlay (ImGui) receives mouse buttons + wheel.\n"
+            "This is mainly for troubleshooting.\n"
+            "Game input remains split:\n"
+            "- Keyboard + mouse movement via WndProc\n"
+            "- Mouse buttons + wheel via DirectInput"
+        );
+    }
+}
+
 void SettingsModel::SyncVirtualResolutionIfNeeded()
 {
     // Implementation removed for rebase

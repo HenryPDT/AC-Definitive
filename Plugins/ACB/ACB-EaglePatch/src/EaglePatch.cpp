@@ -4,7 +4,7 @@
 #include "EaglePatch.h"
 #include "Patches/Controller.h"
 #include "Patches/SkipIntro.h"
-#include <Serialization/Utils/FileSystem.h>
+#include <PluginConfig.h>
 #include <filesystem>
 
 // Define the global loader reference here
@@ -27,18 +27,7 @@ public:
         auto version = ACBEaglePatch::DetectVersion(baseAddr);
 
         // --- Load Configuration ---
-        HMODULE hModule = NULL;
-        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)PluginEntry, &hModule);
-        char modulePath[MAX_PATH];
-        GetModuleFileNameA(hModule, modulePath, MAX_PATH);
-        std::filesystem::path configPath = std::filesystem::path(modulePath).replace_extension(".json");
-
-        Serialization::JSON jsonConfig = Serialization::Utils::LoadJSONFromFile(configPath);
-        if (!jsonConfig.IsNull()) g_config.SectionFromJSON(jsonConfig);
-
-        Serialization::JSON outJson;
-        g_config.SectionToJSON(outJson);
-        Serialization::Utils::SaveJSONToFile(outJson, configPath);
+        PluginConfig::Load(g_config, (const void*)PluginEntry);
 
         if (version != ACBEaglePatch::GameVersion::Unknown)
         {
