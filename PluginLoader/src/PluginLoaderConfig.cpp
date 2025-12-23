@@ -2,12 +2,17 @@
 #include "Serialization/Serialization.h"
 #include "Serialization/Utils/FileSystem.h"
 #include "log.h"
+#include <chrono>
 
 namespace PluginLoaderConfig {
 
     Config g_Config;
     fs::path g_ConfigFilepath;
     fs::file_time_type g_LastWriteTime;
+    static fs::file_time_type g_LastObservedWriteTime;
+    static bool g_HasPendingReload = false;
+    static std::chrono::steady_clock::time_point g_PendingSince{};
+    static constexpr auto kReloadDebounce = std::chrono::milliseconds(250);
 
     void Init(HMODULE hModule)
     {
@@ -21,11 +26,27 @@ namespace PluginLoaderConfig {
         if (g_ConfigFilepath.empty()) return;
         if (fs::exists(g_ConfigFilepath))
         {
-            // Update timestamp first to avoid loop if load fails or writes back
-            g_LastWriteTime = fs::last_write_time(g_ConfigFilepath);
+            std::error_code ec;
+            const auto writeTime = fs::last_write_time(g_ConfigFilepath, ec);
+            if (ec)
+            {
+                LOG_WARN("Config load: failed to stat config file (%s).", g_ConfigFilepath.string().c_str());
+                return;
+            }
 
             Serialization::JSON cfg = Serialization::Utils::LoadJSONFromFile(g_ConfigFilepath);
+            if (cfg.IsNull())
+            {
+                LOG_WARN("Config load: JSON was null/invalid, keeping last-good config.");
+                return;
+            }
+
+            // Apply atomically-ish: only advance timestamps after successful parse+apply.
             g_Config.SectionFromJSON(cfg);
+            g_LastWriteTime = writeTime;
+            g_LastObservedWriteTime = writeTime;
+            g_HasPendingReload = false;
+
             LOG_INFO("Config loaded.");
         }
         else
@@ -41,23 +62,50 @@ namespace PluginLoaderConfig {
         g_Config.SectionToJSON(cfg);
         Serialization::Utils::SaveJSONToFile(cfg, g_ConfigFilepath);
         
-        if (fs::exists(g_ConfigFilepath))
-             g_LastWriteTime = fs::last_write_time(g_ConfigFilepath);
+        std::error_code ec;
+        if (fs::exists(g_ConfigFilepath, ec) && !ec)
+        {
+            g_LastWriteTime = fs::last_write_time(g_ConfigFilepath, ec);
+            if (!ec)
+                g_LastObservedWriteTime = g_LastWriteTime;
+        }
     }
 
     void CheckHotReload()
     {
         if (g_ConfigFilepath.empty()) return;
         
-        // Simple polling (could be optimized, but file IO stat is cheap enough for 100ms sleep loop)
         std::error_code ec;
         if (fs::exists(g_ConfigFilepath, ec))
         {
-            auto currentWriteTime = fs::last_write_time(g_ConfigFilepath, ec);
-            if (!ec && currentWriteTime > g_LastWriteTime)
+            const auto currentWriteTime = fs::last_write_time(g_ConfigFilepath, ec);
+            if (ec) return;
+
+            // Detect a new write and start (or restart) debounce window.
+            if (currentWriteTime > g_LastObservedWriteTime)
             {
-                LOG_INFO("Config change detected on disk. Reloading...");
-                Load();
+                g_LastObservedWriteTime = currentWriteTime;
+                g_HasPendingReload = true;
+                g_PendingSince = std::chrono::steady_clock::now();
+                return;
+            }
+
+            if (g_HasPendingReload)
+            {
+                const auto now = std::chrono::steady_clock::now();
+                if ((now - g_PendingSince) < kReloadDebounce)
+                    return;
+
+                // Only reload if file is still newer than last-good.
+                if (g_LastObservedWriteTime > g_LastWriteTime)
+                {
+                    LOG_INFO("Config change detected on disk. Reloading...");
+                    Load();
+                }
+                else
+                {
+                    g_HasPendingReload = false;
+                }
             }
         }
     }
