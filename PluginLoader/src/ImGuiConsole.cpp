@@ -1,16 +1,11 @@
 #include "ImGuiConsole.h"
 #include <imgui_internal.h>
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <cstdarg>
 #include <optional>
 #include <string>
 
-// Portable helpers
-static int Stricmp(const char* s1, const char* s2) { int d; while ((d = toupper(*s2) - toupper(*s1)) == 0 && *s1) { s1++; s2++; } return d; }
-static int Strnicmp(const char* s1, const char* s2, int n) { int d = 0; while (n > 0 && (d = toupper(*s2) - toupper(*s1)) == 0 && *s1) { s1++; s2++; n--; } return d; }
-static char* Strdup(const char* s) { size_t len = strlen(s) + 1; void* buf = malloc(len); IM_ASSERT(buf); return (char*)memcpy(buf, (const void*)s, len); }
 static void Strtrim(char* s) { char* str_end = s + strlen(s); while (str_end > s && str_end[-1] == ' ') str_end--; *str_end = 0; }
 
 ImGuiConsole::ImGuiConsole()
@@ -47,7 +42,7 @@ void ImGuiConsole::ClearLog()
 void ImGuiConsole::AddLog(const char* s)
 {
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
-    m_Items.push_back(Strdup(s));
+    m_Items.push_back(_strdup(s));
 }
 
 void ImGuiConsole::AddLogF(const char* fmt, ...)
@@ -68,25 +63,25 @@ void ImGuiConsole::ExecCommand(const char* command_line)
     // Insert into history. First find match and delete it so it can be pushed to the back.
     m_HistoryPos = -1;
     for (int i = m_History.Size - 1; i >= 0; i--)
-        if (Stricmp(m_History[i], command_line) == 0)
+        if (_stricmp(m_History[i], command_line) == 0)
         {
             free(m_History[i]);
             m_History.erase(m_History.begin() + i);
             break;
         }
-    m_History.push_back(Strdup(command_line));
+    m_History.push_back(_strdup(command_line));
 
-    if (Stricmp(command_line, "CLEAR") == 0)
+    if (_stricmp(command_line, "CLEAR") == 0)
     {
         ClearLog();
     }
-    else if (Stricmp(command_line, "HELP") == 0)
+    else if (_stricmp(command_line, "HELP") == 0)
     {
         AddLogF("Commands:");
         for (int i = 0; i < m_Commands.Size; i++)
             AddLogF("- %s", m_Commands[i]);
     }
-    else if (Stricmp(command_line, "HISTORY") == 0)
+    else if (_stricmp(command_line, "HISTORY") == 0)
     {
         int first = m_History.Size - 10;
         for (int i = first > 0 ? first : 0; i < m_History.Size; i++)
@@ -123,7 +118,7 @@ int ImGuiConsole::TextEditCallback(ImGuiInputTextCallbackData* data)
         }
         ImVector<const char*> candidates;
         for (int i = 0; i < m_Commands.Size; i++)
-            if (Strnicmp(m_Commands[i], word_start, (int)(word_end - word_start)) == 0)
+            if (_strnicmp(m_Commands[i], word_start, (int)(word_end - word_start)) == 0)
                 candidates.push_back(m_Commands[i]);
 
         if (candidates.Size == 0)

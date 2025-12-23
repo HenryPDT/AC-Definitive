@@ -6,10 +6,20 @@
 #include "Serialization/Adapters/EnumAdapter.h"
 #include "Serialization/Adapters/HexAdapter.h"
 #include "KeyBind.h"
+#include "base.h"
+#include "WindowedMode.h"
 #include <filesystem>
 namespace fs = std::filesystem;
 
 namespace PluginLoaderConfig {
+}
+
+namespace PluginLoaderConfig {
+
+    using WindowedMode = ::BaseHook::WindowedMode::Mode;
+    using ResizeBehavior = ::BaseHook::WindowedMode::ResizeBehavior;
+    using DirectXVersion = ::BaseHook::DirectXVersion;
+    using CursorClipMode = ::BaseHook::WindowedMode::CursorClipMode;
 
     enum class ImGuiMouseInputSource : int
     {
@@ -23,21 +33,32 @@ namespace PluginLoaderConfig {
 
         PROPERTY(hotkey_ToggleMenu, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_INSERT));
         PROPERTY(hotkey_ToggleConsole, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_OEM_3)); // Tilde
-        PROPERTY(fontSize, float, Serialization::NumericAdapter_template<float>, 13.0f);
+        PROPERTY(fontSize, int, Serialization::IntegerAdapter_template<int>, 13);
 
         // CPU Settings
         PROPERTY(CpuAffinityMask, uint64_t, Serialization::HexStringAdapter, 0);
 
-        // DirectX Settings (Removed for rebase)
-        // PROPERTY(DirectXVersion, DirectXVersion, Serialization::NumericEnumAdapter_template<DirectXVersion>, DirectXVersion::Auto);
+        // DirectX Settings
+        PROPERTY(DirectXVersion, DirectXVersion, Serialization::NumericEnumAdapter_template<DirectXVersion>, DirectXVersion::Auto);
 
-        // Windowed Mode Settings (Removed for rebase)
-        // PROPERTY(WindowedMode, WindowedMode, Serialization::NumericEnumAdapter_template<WindowedMode>, WindowedMode::ExclusiveFullscreen);
-        // PROPERTY(ResizeBehavior, ResizeBehavior, Serialization::NumericEnumAdapter_template<ResizeBehavior>, ResizeBehavior::ResizeWindow);
-        // PROPERTY(WindowPosX, int, Serialization::NumericAdapter_template<int>, -1); // -1 = center
-        // PROPERTY(WindowPosY, int, Serialization::NumericAdapter_template<int>, -1);
-        // PROPERTY(WindowWidth, int, Serialization::NumericAdapter_template<int>, 1920);
-        // PROPERTY(WindowHeight, int, Serialization::NumericAdapter_template<int>, 1080);
+        // Windowed Mode Settings
+        PROPERTY(WindowedMode, WindowedMode, Serialization::NumericEnumAdapter_template<WindowedMode>, WindowedMode::BorderlessFullscreen);
+        PROPERTY(ResizeBehavior, ResizeBehavior, Serialization::NumericEnumAdapter_template<ResizeBehavior>, ResizeBehavior::ResizeWindow);
+        PROPERTY(WindowPosX, int, Serialization::IntegerAdapter_template<int>, -1); // -1 = center
+        PROPERTY(WindowPosY, int, Serialization::IntegerAdapter_template<int>, -1);
+        PROPERTY(WindowWidth, int, Serialization::IntegerAdapter_template<int>, 1920);
+        PROPERTY(WindowHeight, int, Serialization::IntegerAdapter_template<int>, 1080);
+        PROPERTY(TargetMonitor, int, Serialization::IntegerAdapter_template<int>, -1);
+        PROPERTY(CursorClipMode, CursorClipMode, Serialization::NumericEnumAdapter_template<CursorClipMode>, CursorClipMode::Default);
+        PROPERTY(OverrideResX, int, Serialization::IntegerAdapter_template<int>, 0);
+        PROPERTY(OverrideResY, int, Serialization::IntegerAdapter_template<int>, 0);
+        PROPERTY(AlwaysOnTop, bool, Serialization::BooleanAdapter, false);
+        PROPERTY(RenderInBackground, bool, Serialization::BooleanAdapter, false);
+
+        // Framerate Limiter
+        PROPERTY(EnableFPSLimit, bool, Serialization::BooleanAdapter, false);
+        PROPERTY(FPSLimit, int, Serialization::NumericAdapter_template<int>, 60);
+
 
         // Overlay mouse *buttons/wheel* routing (overlay only).
         // - Keyboard + mouse movement for overlay stays Win32/WndProc always.

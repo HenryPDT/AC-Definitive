@@ -3,6 +3,7 @@
 #include "Serialization/Utils/FileSystem.h"
 #include "log.h"
 #include <chrono>
+#include "FramerateLimiter.h"
 
 namespace PluginLoaderConfig {
 
@@ -42,12 +43,22 @@ namespace PluginLoaderConfig {
             }
 
             // Apply atomically-ish: only advance timestamps after successful parse+apply.
-            g_Config.SectionFromJSON(cfg);
+            bool dirty = g_Config.SectionFromJSON(cfg);
             g_LastWriteTime = writeTime;
             g_LastObservedWriteTime = writeTime;
             g_HasPendingReload = false;
 
+            // Apply runtime settings that aren't applied elsewhere (e.g. by SettingsModel)
+            BaseHook::g_FramerateLimiter.SetEnabled(g_Config.EnableFPSLimit);
+            BaseHook::g_FramerateLimiter.SetTargetFPS(static_cast<double>(g_Config.FPSLimit));
+
             LOG_INFO("Config loaded.");
+
+            if (dirty)
+            {
+                LOG_INFO("Config load: Detected missing or invalid keys, updating file.");
+                Save();
+            }
         }
         else
         {

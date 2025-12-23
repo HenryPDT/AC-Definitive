@@ -15,5 +15,10 @@ namespace BaseHook
         {
             return DXGICommon::ResizeBuffers(DXGICommon::Api::D3D11, pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
         }
+
+        HRESULT __stdcall hkResizeTargetDX11(IDXGISwapChain* pSwapChain, const DXGI_MODE_DESC* pNewTargetParameters)
+        {
+            return DXGICommon::ResizeTarget(DXGICommon::Api::D3D11, pSwapChain, pNewTargetParameters);
+        }
     }
 }

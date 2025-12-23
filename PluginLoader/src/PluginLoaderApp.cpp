@@ -6,10 +6,11 @@
 #include "ImGuiCTX.h"
 #include "ImGuiConfigUtils.h"
 #include "KeyBind.h"
-// #include "WindowedMode.h" // Removed for rebase
+#include "WindowedMode.h"
 #include "crash_handler.h"
 #include "log.h"
 #include "InputCapture.h"
+#include "FramerateLimiter.h"
 
 #include <windows.h>
 
@@ -86,6 +87,81 @@ namespace
 
     LRESULT __stdcall LoaderWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
+        bool renderInBackground = PluginLoaderConfig::g_Config.RenderInBackground.get();
+
+        const bool configuredExclusiveFullscreen =
+            (PluginLoaderConfig::g_Config.WindowedMode.get() == PluginLoaderConfig::WindowedMode::ExclusiveFullscreen);
+
+        // Force RenderInBackground off if in Exclusive Fullscreen to ensure standard minimizing behavior
+        if (configuredExclusiveFullscreen)
+            renderInBackground = false;
+
+        // When running Exclusive Fullscreen, Alt+Tab will force DXGI out of exclusive mode.
+        // We can't prevent that, but we can behave like a "traditional" fullscreen game:
+        // minimize on focus loss so the window doesn't sit on the desktop rendering in the background,
+        // and restore/re-enter exclusive on focus regain.
+        if (configuredExclusiveFullscreen && !renderInBackground)
+        {
+            if (uMsg == WM_ACTIVATE)
+            {
+                if (LOWORD(wParam) == WA_INACTIVE)
+                {
+                    if (IsWindow(hWnd) && !IsIconic(hWnd))
+                        ShowWindow(hWnd, SW_MINIMIZE);
+                }
+                else
+                {
+                    if (IsWindow(hWnd) && IsIconic(hWnd))
+                        ShowWindow(hWnd, SW_RESTORE);
+                }
+            }
+            else if (uMsg == WM_ACTIVATEAPP)
+            {
+                // Some titles primarily use WM_ACTIVATEAPP.
+                if (wParam == FALSE)
+                {
+                    if (IsWindow(hWnd) && !IsIconic(hWnd))
+                        ShowWindow(hWnd, SW_MINIMIZE);
+                }
+                else
+                {
+                    if (IsWindow(hWnd) && IsIconic(hWnd))
+                        ShowWindow(hWnd, SW_RESTORE);
+                }
+            }
+        }
+
+        // Block Alt+Enter toggling when Exclusive Fullscreen is configured. This keeps settings authoritative
+        // and prevents silent drift into windowed mode.
+        if ((uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_SYSCHAR) &&
+            wParam == VK_RETURN &&
+            (lParam & (1 << 29)) && // ALT is down
+            configuredExclusiveFullscreen)
+        {
+            return 1;
+        }
+
+        // Background Rendering: Spoof focus messages to keep game loop running
+        if (renderInBackground)
+        {
+            if (uMsg == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE)
+                wParam = WA_ACTIVE; // Pretend we are active
+            if (uMsg == WM_ACTIVATEAPP && wParam == FALSE)
+                wParam = TRUE; // Pretend app is active
+        }
+
+        // On focus regain, request exclusive fullscreen restore if configured.
+        if (uMsg == WM_ACTIVATE &&
+            LOWORD(wParam) != WA_INACTIVE &&
+            configuredExclusiveFullscreen)
+        {
+            BaseHook::WindowedMode::RequestRestoreExclusiveFullscreen();
+        }
+
+        // Scale mouse coordinates from Physical Window to Virtual Resolution (if applicable)
+        // Fixes cursor restriction when window size != game resolution (Scale Content mode).
+        lParam = BaseHook::WindowedMode::ScaleMouseMessage(hWnd, uMsg, lParam);
+
         // Feed ImGui. To avoid double mouse input, optionally filter mouse messages when DirectInput drives ImGui mouse.
         if (BaseHook::Data::bIsInitialized)
         {
@@ -170,7 +246,14 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
     explicit LoaderSettings(WndProc_t wndProc)
         : BaseHook::Settings(wndProc, true)
     {
-        // Windowed Mode settings removed for rebase
+        m_WindowedMode = (int)PluginLoaderConfig::g_Config.WindowedMode.get();
+        m_ResizeBehavior = (int)PluginLoaderConfig::g_Config.ResizeBehavior.get();
+        m_WindowPosX = PluginLoaderConfig::g_Config.WindowPosX.get();
+        m_WindowPosY = PluginLoaderConfig::g_Config.WindowPosY.get();
+        m_WindowWidth = PluginLoaderConfig::g_Config.WindowWidth.get();
+        m_WindowHeight = PluginLoaderConfig::g_Config.WindowHeight.get();
+        m_DirectXVersion = (int)PluginLoaderConfig::g_Config.DirectXVersion.get();
+        m_CursorClipMode = (int)PluginLoaderConfig::g_Config.CursorClipMode.get();
     }
 
     void OnActivate() override {}
@@ -207,6 +290,21 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
         {
             BaseHook::Data::bBlockInput = shouldBlock;
             LOG_INFO("Input blocking state changed to: %s", BaseHook::Data::bBlockInput ? "ON" : "OFF");
+        }
+
+        // Confine cursor logic: Trap cursor when focused, regardless of menu state or window mode.
+        if (is_focused && BaseHook::Data::hWindow)
+        {
+            RECT rect;
+            if (GetClientRect(BaseHook::Data::hWindow, &rect))
+            {
+                POINT ul = { rect.left, rect.top };
+                POINT lr = { rect.right, rect.bottom };
+                ClientToScreen(BaseHook::Data::hWindow, &ul);
+                ClientToScreen(BaseHook::Data::hWindow, &lr);
+                rect = { ul.x, ul.y, lr.x, lr.y };
+                ClipCursor(&rect);
+            }
         }
 
         if (auto* app = PluginLoaderApp::Get())
@@ -273,6 +371,11 @@ void PluginLoaderApp::Init()
         else {
             PluginLoaderConfig::g_Config.CpuAffinityMask = systemMask;
         }
+
+        // Init default framerate settings
+        BaseHook::g_FramerateLimiter.SetEnabled(PluginLoaderConfig::g_Config.EnableFPSLimit);
+        BaseHook::g_FramerateLimiter.SetTargetFPS(static_cast<double>(PluginLoaderConfig::g_Config.FPSLimit));
+
         PluginLoaderConfig::Save(); // Save the auto-applied settings immediately
     }
 
@@ -309,3 +412,5 @@ void PluginLoaderApp::Shutdown()
     CrashHandler::Shutdown();
     Log::Shutdown();
 }
+
+

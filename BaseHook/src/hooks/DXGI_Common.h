@@ -13,6 +13,7 @@ namespace BaseHook::Hooks::DXGICommon
 
     HRESULT Present(Api api, IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags);
     HRESULT ResizeBuffers(Api api, IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags);
+    HRESULT ResizeTarget(Api api, IDXGISwapChain* pSwapChain, const DXGI_MODE_DESC* pNewTargetParameters);
 }
 
 

@@ -17,6 +17,10 @@ namespace BaseHook
             if (Data::bIsDetached)
                 return CallOriginal(hWnd, uMsg, wParam, lParam);
 
+            // Scale mouse coordinates from Physical Window to Virtual Resolution (if applicable)
+            // This ensures ImGui and the Game receive coordinates matching the render resolution.
+            lParam = WindowedMode::ScaleMouseMessage(hWnd, uMsg, lParam);
+
             // Maintain windowed mode state on activation/focus changes
             if (WindowedMode::ShouldHandle())
             {
@@ -47,6 +51,11 @@ namespace BaseHook
             if (uMsg == WM_DEVICECHANGE)
             {
                 Hooks::HandleDeviceChange(wParam, lParam);
+            }
+
+            if (uMsg == WM_DISPLAYCHANGE)
+            {
+                WindowedMode::g_State.needMonitorRefresh = true;
             }
 
             if (Data::bIsInitialized && !Data::bIsDetached)

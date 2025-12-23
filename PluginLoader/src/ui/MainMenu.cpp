@@ -16,6 +16,7 @@ namespace Ui
         }
 
         m_settings.SyncVirtualResolutionIfNeeded();
+        m_settings.SyncDetectedDisplayStateIfNeeded();
 
         if (ImGuiCTX::Window window("AC Definitive", &BaseHook::Data::bShowMenu); window)
         {
@@ -34,19 +35,38 @@ namespace Ui
 
                 if (ImGuiCTX::Tab tabSettings("Settings"); tabSettings)
                 {
-                    ImGui::Checkbox("Fix DirectInput (Legacy Input)", &BaseHook::Data::bFixDirectInput);
-
-                    m_settings.DrawHotkeysSection();
-                    // m_settings.DrawWindowedModeSection(); // Removed for rebase
-                    m_settings.DrawCpuAffinitySection();
-                    m_settings.DrawAppearanceSection();
-                    m_settings.DrawSaveRow();
-
-                    if (ImGui::CollapsingHeader("Advanced", ImGuiTreeNodeFlags_None))
+                    if (ImGui::CollapsingHeader("Window Management", ImGuiTreeNodeFlags_DefaultOpen))
                     {
-                        // m_settings.DrawInputSection(); // Assuming this is also new and might need checking, but it seems to be for ImGuiMouseSource which I accepted in Config.
-                        // Wait, SettingsModel.h needs to declare DrawInputSection.
+                        m_settings.DrawWindowedModeSection();
                     }
+
+                    if (ImGui::CollapsingHeader("Framerate"))
+                    {
+                        m_settings.DrawFramerateSection();
+                    }
+
+                    if (ImGui::CollapsingHeader("CPU Affinity"))
+                    {
+                        m_settings.DrawCpuAffinitySection();
+                    }
+
+                    if (ImGui::CollapsingHeader("Hotkeys"))
+                    {
+                        m_settings.DrawHotkeysSection();
+                    }
+
+                    if (ImGui::CollapsingHeader("Appearance"))
+                    {
+                        m_settings.DrawAppearanceSection();
+                    }
+
+                    if (ImGui::CollapsingHeader("Input"))
+                    {
+                        ImGui::Checkbox("Fix DirectInput (Legacy Input)", &BaseHook::Data::bFixDirectInput);
+                        m_settings.DrawInputSection();
+                    }
+
+                    m_settings.DrawSaveRow();
                 }
 
                 if (ImGuiCTX::Tab tabAbout("About"); tabAbout)
@@ -63,3 +83,5 @@ namespace Ui
         pluginManager.RenderPluginMenus();
     }
 }
+
+

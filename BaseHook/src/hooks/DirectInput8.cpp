@@ -86,8 +86,6 @@ struct AxisRange {
         if (norm < -1.0f) norm = -1.0f;
         if (norm > 1.0f) norm = 1.0f;
 
-        // Deadzone (15%)
-        if (norm > -0.15f && norm < 0.15f) return 0.0f;
         return norm;
     }
 };

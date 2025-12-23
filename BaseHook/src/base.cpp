@@ -19,17 +19,31 @@ namespace BaseHook
         Settings*         pSettings = nullptr;
         WndProc_t         oWndProc = nullptr;
 
+        // Original User32 Pointers
+        FARPROC oGetSystemMetrics = nullptr;
+        FARPROC oAdjustWindowRectEx = nullptr;
+        FARPROC oGetClientRect = nullptr;
+        FARPROC oGetWindowRect = nullptr;
+        FARPROC oClientToScreen = nullptr;
+        FARPROC oScreenToClient = nullptr;
+        FARPROC oGetCursorPos = nullptr;
+
         thread_local bool               bCallingImGui = false;
         std::atomic<unsigned long long> lastXInputTime = 0;
 
         // DX9
-        IDirect3DDevice9* pDevice = NULL;
+        IDirect3DDevice9* pDevice = nullptr;
         EndScene_t        oEndScene = nullptr;
         Reset_t           oReset = nullptr;
+        Present9_t        oPresent9 = nullptr;
+        TestCooperativeLevel_t oTestCooperativeLevel = nullptr;
+        std::atomic<FakeResetState> g_fakeResetState = FakeResetState::Clear;
 
         // DX11/10 (DXGI)
+        IDXGISwapChain*   pSwapChain = nullptr;
         Present_t         oPresent = nullptr;
         ResizeBuffers_t   oResizeBuffers = nullptr;
+        ResizeTarget_t    oResizeTarget = nullptr;
         ID3D11Device*           pDevice11 = nullptr;
         ID3D11DeviceContext*    pContext11 = nullptr;
         ID3D11RenderTargetView* pMainRenderTargetView11 = nullptr;

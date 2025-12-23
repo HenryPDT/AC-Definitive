@@ -1,8 +1,9 @@
 #include "pch.h"
 #include "DXGI_Common.h"
 
-// #include "WindowedMode.h" // Removed for rebase
+#include "WindowedMode.h"
 #include "log.h"
+#include "FramerateLimiter.h"
 #include "../util/ComPtr.h"
 
 #include "imgui.h"
@@ -12,6 +13,99 @@
 
 namespace BaseHook::Hooks::DXGICommon
 {
+    typedef HRESULT(STDMETHODCALLTYPE* IDXGISwapChain_SetFullscreenState_t)(IDXGISwapChain*, BOOL, IDXGIOutput*);
+    static IDXGISwapChain_SetFullscreenState_t s_oSetFullscreenState = nullptr;
+
+    static HRESULT STDMETHODCALLTYPE hkIDXGISwapChain_SetFullscreenState_DXGICommon(IDXGISwapChain* pSwapChain, BOOL Fullscreen, IDXGIOutput* pTarget)
+    {
+        const bool altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+        const bool enterDown = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+
+        // If user selected a windowed mode, block attempts to go fullscreen.
+        if (WindowedMode::ShouldHandle() && Fullscreen)
+        {
+            static ULONGLONG s_lastLog = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastLog > 5000)
+            {
+                s_lastLog = now;
+                LOG_INFO("DXGI(SetFullscreenState): Blocked TRUE -> forcing FALSE (windowed mode configured).");
+            }
+            return s_oSetFullscreenState ? s_oSetFullscreenState(pSwapChain, FALSE, nullptr) : S_OK;
+        }
+
+        // If user selected exclusive fullscreen, block Alt+Enter attempts to go windowed.
+        if (!WindowedMode::ShouldHandle() && !Fullscreen && (altDown && enterDown))
+        {
+            static ULONGLONG s_lastLog = 0;
+            const ULONGLONG now = GetTickCount64();
+            if (now - s_lastLog > 1000)
+            {
+                s_lastLog = now;
+                LOG_INFO("DXGI(SetFullscreenState): Blocked FALSE due to Alt+Enter (exclusive fullscreen configured).");
+            }
+            return S_OK;
+        }
+
+        return s_oSetFullscreenState ? s_oSetFullscreenState(pSwapChain, Fullscreen, pTarget) : S_OK;
+    }
+
+    static void EnsureSwapChainFullscreenHook(IDXGISwapChain* pSwapChain)
+    {
+        static IDXGISwapChain* s_hookedSwapChain = nullptr;
+        if (!pSwapChain || s_hookedSwapChain == pSwapChain)
+            return;
+
+        void** vtable = *(void***)pSwapChain;
+        if (!vtable)
+            return;
+
+        // vtable[10] = IDXGISwapChain::SetFullscreenState (DXGI 1.0/1.1)
+        if (MH_CreateHook(vtable[10], hkIDXGISwapChain_SetFullscreenState_DXGICommon, (LPVOID*)&s_oSetFullscreenState) == MH_OK)
+        {
+            MH_EnableHook(vtable[10]);
+            s_hookedSwapChain = pSwapChain;
+            LOG_INFO("DXGI: Installed swapchain SetFullscreenState hook (via Present path).");
+        }
+    }
+
+    static void DisableDXGIAltEnter(IDXGISwapChain* pSwapChain)
+    {
+        static IDXGISwapChain* s_lastSwapChain = nullptr;
+        static bool s_done = false;
+
+        if (!pSwapChain)
+            return;
+
+        // Only need to do this once per swapchain.
+        if (s_done && s_lastSwapChain == pSwapChain)
+            return;
+
+        s_lastSwapChain = pSwapChain;
+        s_done = true;
+
+        ComPtr<IDXGIFactory> factory;
+        HRESULT hr = pSwapChain->GetParent(IID_PPV_ARGS(factory.ReleaseAndGetAddressOf()));
+        if (FAILED(hr) || !factory)
+        {
+            LOG_WARN("DXGI: Failed to get factory parent for MakeWindowAssociation (hr=0x%08X).", (unsigned)hr);
+            return;
+        }
+
+        if (!Data::hWindow || !IsWindow(Data::hWindow))
+            return;
+
+        // Disable DXGI runtime Alt+Enter fullscreen toggling.
+        hr = factory->MakeWindowAssociation(Data::hWindow, DXGI_MWA_NO_ALT_ENTER);
+        if (FAILED(hr))
+        {
+            LOG_WARN("DXGI: MakeWindowAssociation(DXGI_MWA_NO_ALT_ENTER) failed (hr=0x%08X).", (unsigned)hr);
+            return;
+        }
+
+        LOG_INFO("DXGI: Alt+Enter disabled via MakeWindowAssociation(DXGI_MWA_NO_ALT_ENTER).");
+    }
+
     static void CreateRenderTarget10(IDXGISwapChain* pSwapChain)
     {
         ComPtr<ID3D10Texture2D> pBackBuffer;
@@ -61,6 +155,7 @@ namespace BaseHook::Hooks::DXGICommon
             return true;
 
         Data::pSwapChain = pSwapChain;
+        EnsureSwapChainFullscreenHook(pSwapChain);
 
         if (api == Api::D3D10)
         {
@@ -68,6 +163,7 @@ namespace BaseHook::Hooks::DXGICommon
                 return false;
 
             EnsureWndProcForSwapChain(pSwapChain);
+            DisableDXGIAltEnter(pSwapChain);
 
             InitImGuiStyle();
             ImGui_ImplWin32_Init(Data::hWindow);
@@ -83,6 +179,7 @@ namespace BaseHook::Hooks::DXGICommon
 
         Data::pDevice11->GetImmediateContext(&Data::pContext11);
         EnsureWndProcForSwapChain(pSwapChain);
+        DisableDXGIAltEnter(pSwapChain);
 
         InitImGuiStyle();
         ImGui_ImplWin32_Init(Data::hWindow);
@@ -94,8 +191,11 @@ namespace BaseHook::Hooks::DXGICommon
 
     static void BeginFrame(Api api)
     {
-        // if (WindowedMode::ShouldHandle())
-        //    WindowedMode::Apply(Data::hWindow);
+        // Keep runtime fullscreen state in sync (DXGI) and restore exclusive fullscreen when configured.
+        WindowedMode::TickDXGIState();
+
+        if (WindowedMode::ShouldHandle())
+            WindowedMode::Apply(Data::hWindow);
 
         Data::bIsRendering = true;
 
@@ -185,21 +285,37 @@ namespace BaseHook::Hooks::DXGICommon
             EndAndRender(api);
         }
 
+        g_FramerateLimiter.Wait();
+
         return Data::oPresent(pSwapChain, SyncInterval, Flags);
     }
 
     HRESULT ResizeBuffers(Api api, IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags)
     {
-        /*
         WindowedMode::CheckAndApplyPendingState();
-        if (WindowedMode::ShouldHandle())
+        if (WindowedMode::ShouldHandle() || WindowedMode::ShouldApplyResolutionOverride())
         {
+            // Fix: If game requests auto-size (0,0) but we are in ScaleContent mode,
+            // we must enforce the virtual resolution to prevent the swapchain from snapping to the window size.
+            if (Width == 0 && Height == 0 && WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent)
+            {
+                 Width = WindowedMode::g_State.virtualWidth;
+                 Height = WindowedMode::g_State.virtualHeight;
+                 LOG_INFO("DXGI ResizeBuffers: Auto-size blocked by ScaleContent. Enforcing %dx%d", Width, Height);
+            }
+
+            if (WindowedMode::g_State.overrideWidth > 0 && WindowedMode::g_State.overrideHeight > 0)
+            {
+                Width = WindowedMode::g_State.overrideWidth;
+                Height = WindowedMode::g_State.overrideHeight;
+            }
+
             LOG_INFO("DXGI ResizeBuffers: %dx%d", Width, Height);
             if (Width > 0 && Height > 0)
                 WindowedMode::NotifyResolutionChange(Width, Height);
-            WindowedMode::Apply(Data::hWindow);
+            if (WindowedMode::ShouldHandle())
+                WindowedMode::Apply(Data::hWindow);
         }
-        */
 
         if (Data::bIsInitialized)
         {
@@ -217,6 +333,21 @@ namespace BaseHook::Hooks::DXGICommon
 
         HRESULT hr = Data::oResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
 
+        if (SUCCEEDED(hr))
+        {
+            if (WindowedMode::ShouldHandle())
+            {
+                DXGI_SWAP_CHAIN_DESC desc;
+                if (SUCCEEDED(pSwapChain->GetDesc(&desc)))
+                {
+                    if (desc.BufferDesc.Width > 0 && desc.BufferDesc.Height > 0)
+                    {
+                         WindowedMode::NotifyResolutionChange(desc.BufferDesc.Width, desc.BufferDesc.Height);
+                    }
+                }
+            }
+        }
+
         if (SUCCEEDED(hr) && Data::bIsInitialized)
         {
             if (api == Api::D3D10)
@@ -232,5 +363,47 @@ namespace BaseHook::Hooks::DXGICommon
         }
 
         return hr;
+    }
+
+    HRESULT ResizeTarget(Api api, IDXGISwapChain* pSwapChain, const DXGI_MODE_DESC* pNewTargetParameters)
+    {
+        WindowedMode::CheckAndApplyPendingState();
+
+        const bool shouldHandle = WindowedMode::ShouldHandle();
+        const bool shouldOverride = WindowedMode::ShouldApplyResolutionOverride();
+
+        if (shouldHandle || shouldOverride)
+        {
+             if (pNewTargetParameters)
+             {
+                 LOG_INFO("DXGI ResizeTarget: %dx%d", pNewTargetParameters->Width, pNewTargetParameters->Height);
+                 // If the game is requesting a specific target size, we treat it as a resolution change request
+                 if (pNewTargetParameters->Width > 0 && pNewTargetParameters->Height > 0)
+                     WindowedMode::NotifyResolutionChange(pNewTargetParameters->Width, pNewTargetParameters->Height);
+             }
+             
+             if (shouldHandle)
+             {
+                 WindowedMode::Apply(Data::hWindow);
+                 return S_OK; // Block original to prevent fighting
+             }
+             else if (shouldOverride)
+             {
+                 // In Exclusive Fullscreen with Override, we must forward the call with the overridden parameters
+                 // so the swapchain/monitor switches to the desired resolution.
+                 DXGI_MODE_DESC desc = (pNewTargetParameters) ? *pNewTargetParameters : DXGI_MODE_DESC{};
+
+                 if (WindowedMode::g_State.overrideWidth > 0) desc.Width = WindowedMode::g_State.overrideWidth;
+                 if (WindowedMode::g_State.overrideHeight > 0) desc.Height = WindowedMode::g_State.overrideHeight;
+
+                 // Clear refresh rate constraints to avoid mode enumeration failure with custom resolutions
+                 desc.RefreshRate.Numerator = 0;
+                 desc.RefreshRate.Denominator = 0;
+
+                 return Data::oResizeTarget(pSwapChain, &desc);
+             }
+        }
+        
+        return Data::oResizeTarget(pSwapChain, pNewTargetParameters);
     }
 }
