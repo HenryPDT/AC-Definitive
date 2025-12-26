@@ -35,6 +35,7 @@ namespace BaseHook
         IDirect3DDevice9* pDevice = nullptr;
         EndScene_t        oEndScene = nullptr;
         Reset_t           oReset = nullptr;
+        ResetEx_t         oResetEx = nullptr;
         Present9_t        oPresent9 = nullptr;
         TestCooperativeLevel_t oTestCooperativeLevel = nullptr;
         std::atomic<FakeResetState> g_fakeResetState = FakeResetState::Clear;

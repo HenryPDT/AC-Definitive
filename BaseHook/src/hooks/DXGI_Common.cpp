@@ -16,6 +16,49 @@ namespace BaseHook::Hooks::DXGICommon
     typedef HRESULT(STDMETHODCALLTYPE* IDXGISwapChain_SetFullscreenState_t)(IDXGISwapChain*, BOOL, IDXGIOutput*);
     static IDXGISwapChain_SetFullscreenState_t s_oSetFullscreenState = nullptr;
 
+    typedef HRESULT(STDMETHODCALLTYPE* IDXGISwapChain_GetFullscreenState_t)(IDXGISwapChain*, BOOL*, IDXGIOutput**);
+    static IDXGISwapChain_GetFullscreenState_t s_oGetFullscreenState = nullptr;
+
+    typedef HRESULT(STDMETHODCALLTYPE* IDXGISwapChain_GetDesc_t)(IDXGISwapChain*, DXGI_SWAP_CHAIN_DESC*);
+    static IDXGISwapChain_GetDesc_t s_oGetDesc = nullptr;
+
+    static HRESULT STDMETHODCALLTYPE hkIDXGISwapChain_GetFullscreenState_DXGICommon(IDXGISwapChain* pSwapChain, BOOL* pFullscreen, IDXGIOutput** ppTarget)
+    {
+        HRESULT hr = s_oGetFullscreenState ? s_oGetFullscreenState(pSwapChain, pFullscreen, ppTarget) : S_OK;
+
+        if (SUCCEEDED(hr) && pFullscreen && WindowedMode::ShouldHandle())
+        {
+            // "Fake Fullscreen" Logic:
+            // If we are in Borderless Fullscreen mode, the game likely expects to be in "Exclusive Fullscreen".
+            // Since we blocked the transition to Exclusive (SetFullscreenState), we lie here and say we ARE in Fullscreen.
+            if (WindowedMode::g_State.activeMode == WindowedMode::Mode::BorderlessFullscreen) {
+                *pFullscreen = TRUE;
+            }
+            else {
+                // For standard Bordered Windowed, we tell the truth (FALSE).
+                *pFullscreen = FALSE;
+            }
+        }
+        return hr;
+    }
+
+    static HRESULT STDMETHODCALLTYPE hkIDXGISwapChain_GetDesc_DXGICommon(IDXGISwapChain* pSwapChain, DXGI_SWAP_CHAIN_DESC* pDesc)
+    {
+        HRESULT hr = s_oGetDesc ? s_oGetDesc(pSwapChain, pDesc) : S_OK;
+
+        if (SUCCEEDED(hr) && pDesc && WindowedMode::ShouldHandle())
+        {
+            // Consistent Lie:
+            // If we told the game we are Fullscreen (in GetFullscreenState), we must also report Windowed = FALSE here.
+            if (WindowedMode::g_State.activeMode == WindowedMode::Mode::BorderlessFullscreen) {
+                pDesc->Windowed = FALSE;
+            }
+            // Note: We do NOT overwrite BufferDesc dimensions here because the game might use them to resize its backbuffers.
+            // We want the backbuffers to match our virtual resolution.
+        }
+        return hr;
+    }
+
     static HRESULT STDMETHODCALLTYPE hkIDXGISwapChain_SetFullscreenState_DXGICommon(IDXGISwapChain* pSwapChain, BOOL Fullscreen, IDXGIOutput* pTarget)
     {
         const bool altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
@@ -50,7 +93,7 @@ namespace BaseHook::Hooks::DXGICommon
         return s_oSetFullscreenState ? s_oSetFullscreenState(pSwapChain, Fullscreen, pTarget) : S_OK;
     }
 
-    static void EnsureSwapChainFullscreenHook(IDXGISwapChain* pSwapChain)
+    void EnsureSwapChainFullscreenHook(IDXGISwapChain* pSwapChain)
     {
         static IDXGISwapChain* s_hookedSwapChain = nullptr;
         if (!pSwapChain || s_hookedSwapChain == pSwapChain)
@@ -60,16 +103,37 @@ namespace BaseHook::Hooks::DXGICommon
         if (!vtable)
             return;
 
-        // vtable[10] = IDXGISwapChain::SetFullscreenState (DXGI 1.0/1.1)
+        bool hookedAny = false;
+
+        // vtable[10] = IDXGISwapChain::SetFullscreenState
         if (MH_CreateHook(vtable[10], hkIDXGISwapChain_SetFullscreenState_DXGICommon, (LPVOID*)&s_oSetFullscreenState) == MH_OK)
         {
             MH_EnableHook(vtable[10]);
+            hookedAny = true;
+        }
+
+        // vtable[11] = IDXGISwapChain::GetFullscreenState
+        if (MH_CreateHook(vtable[11], hkIDXGISwapChain_GetFullscreenState_DXGICommon, (LPVOID*)&s_oGetFullscreenState) == MH_OK)
+        {
+            MH_EnableHook(vtable[11]);
+            hookedAny = true;
+        }
+
+        // vtable[12] = IDXGISwapChain::GetDesc
+        if (MH_CreateHook(vtable[12], hkIDXGISwapChain_GetDesc_DXGICommon, (LPVOID*)&s_oGetDesc) == MH_OK)
+        {
+            MH_EnableHook(vtable[12]);
+            hookedAny = true;
+        }
+
+        if (hookedAny)
+        {
             s_hookedSwapChain = pSwapChain;
-            LOG_INFO("DXGI: Installed swapchain SetFullscreenState hook (via Present path).");
+            LOG_INFO("DXGI: Installed swapchain hooks (SetFullscreenState/GetFullscreenState/GetDesc).");
         }
     }
 
-    static void DisableDXGIAltEnter(IDXGISwapChain* pSwapChain)
+    void DisableDXGIAltEnter(IDXGISwapChain* pSwapChain)
     {
         static IDXGISwapChain* s_lastSwapChain = nullptr;
         static bool s_done = false;
@@ -149,13 +213,20 @@ namespace BaseHook::Hooks::DXGICommon
         }
     }
 
-    static bool EnsureInitialized(Api api, IDXGISwapChain* pSwapChain)
+    bool EnsureInitialized(Api api, IDXGISwapChain* pSwapChain)
     {
         if (Data::bIsInitialized)
             return true;
 
         Data::pSwapChain = pSwapChain;
         EnsureSwapChainFullscreenHook(pSwapChain);
+
+        if (WindowedMode::ShouldHandle())
+        {
+            pSwapChain->SetFullscreenState(FALSE, nullptr);
+            // Re-apply window settings immediately to fix styles/rects
+            WindowedMode::Apply(Data::hWindow);
+        }
 
         if (api == Api::D3D10)
         {
@@ -335,15 +406,12 @@ namespace BaseHook::Hooks::DXGICommon
 
         if (SUCCEEDED(hr))
         {
-            if (WindowedMode::ShouldHandle())
+            DXGI_SWAP_CHAIN_DESC desc;
+            if (SUCCEEDED(pSwapChain->GetDesc(&desc)))
             {
-                DXGI_SWAP_CHAIN_DESC desc;
-                if (SUCCEEDED(pSwapChain->GetDesc(&desc)))
+                if (desc.BufferDesc.Width > 0 && desc.BufferDesc.Height > 0)
                 {
-                    if (desc.BufferDesc.Width > 0 && desc.BufferDesc.Height > 0)
-                    {
-                         WindowedMode::NotifyResolutionChange(desc.BufferDesc.Width, desc.BufferDesc.Height);
-                    }
+                        WindowedMode::NotifyResolutionChange(desc.BufferDesc.Width, desc.BufferDesc.Height);
                 }
             }
         }

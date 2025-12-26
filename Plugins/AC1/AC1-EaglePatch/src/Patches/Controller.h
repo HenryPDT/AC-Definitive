@@ -38,10 +38,10 @@ namespace AC1EaglePatch
                 bool IsEmpty() const { return x == 0.0f && y == 0.0f; }
             };
 
-            void** vtable;          // 0x00
-            int m_Flags;            // 0x04
-            ButtonStates m_LastFrame; // 0x08 -> 0x18
-            ButtonStates m_ThisFrame; // 0x18 -> 0x28
+            void** vtable;              // 0x00
+            int m_Flags;                // 0x04
+            ButtonStates m_LastFrame;   // 0x08 -> 0x18
+            ButtonStates m_ThisFrame;   // 0x18 -> 0x28
             uint64_t m_LastFrameTimeStamp; // 0x28 -> 0x30
             uint64_t m_ThisFrameTimeStamp; // 0x30 -> 0x38
             uint64_t m_ButtonPressTimeStamp[NbButtons]; // 0x38 -> 0xB8
@@ -52,7 +52,7 @@ namespace AC1EaglePatch
             char _pad2[8];          // 0x108 -> 0x110 (Align RightStick)
             StickState RightStick;  // 0x110 -> 0x118
 
-            char _gap_118[0x98];    // 0x118 -> 0x1B0
+            char _gap_118[0x98];    // 0x118 -> 0x1B0 (Align/Gap)
             int field_1B0[17];      // 0x1B0 -> 0x1F4
             float* vibrationData;   // 0x1F4 -> 0x1F8
             char field_1F8[0x308];  // 0x1F8 -> 0x500

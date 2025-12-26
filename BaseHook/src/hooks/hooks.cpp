@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "base.h"
 #include "WindowedMode.h"
+#include "D3DCreateHooks.h"
+#include "GameDetection.h"
 
 namespace BaseHook
 {
@@ -109,6 +111,10 @@ namespace BaseHook
             InitDirectInput();
             InitXInput();
 
+            // Late-install D3D9 hooks (safe from Main Thread)
+            // This catches cases where game created IDirect3D9 before we hooked exports in DllMain
+            BaseHook::WindowedMode::InstallD3D9HooksLate();
+
             // Init Kiero for rendering hooks
             kiero::RenderType::Enum renderType = kiero::RenderType::None;
             int dxVer = Data::pSettings->m_DirectXVersion;
@@ -119,10 +125,14 @@ namespace BaseHook
             else
             {
                 // Auto detection
-                if (GetModuleHandleA("d3d10.dll") != NULL) renderType = kiero::RenderType::D3D10;
-                else if (GetModuleHandleA("d3d9.dll") != NULL) renderType = kiero::RenderType::D3D9;
-                else if (GetModuleHandleA("d3d11.dll") != NULL) renderType = kiero::RenderType::D3D11;
-                else renderType = kiero::RenderType::Auto;
+                renderType = Util::GetGameSpecificRenderType();
+                if (renderType == kiero::RenderType::None)
+                {
+                    if (GetModuleHandleA("d3d10.dll") != NULL) renderType = kiero::RenderType::D3D10;
+                    else if (GetModuleHandleA("d3d9.dll") != NULL) renderType = kiero::RenderType::D3D9;
+                    else if (GetModuleHandleA("d3d11.dll") != NULL) renderType = kiero::RenderType::D3D11;
+                    else renderType = kiero::RenderType::Auto;
+                }
             }
 
             LOG_INFO("Kiero Init: Target=%d (Config=%d)", (int)renderType, dxVer);

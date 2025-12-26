@@ -4,6 +4,50 @@
 
 namespace AC2EaglePatch
 {
+    struct sAddresses {
+        static uintptr_t ShadowMap;
+        static uintptr_t Cloth;
+        static uintptr_t LodLevel;
+        static uintptr_t ForceLod0;
+        static uintptr_t CheckChar;
+        static uintptr_t CheckCharOut;
+    };
+
+    uintptr_t sAddresses::ShadowMap = 0;
+    uintptr_t sAddresses::Cloth = 0;
+    uintptr_t sAddresses::LodLevel = 0;
+    uintptr_t sAddresses::ForceLod0 = 0;
+    uintptr_t sAddresses::CheckChar = 0;
+    uintptr_t sAddresses::CheckCharOut = 0;
+
+    namespace
+    {
+        bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
+        {
+            switch (version)
+            {
+            case GameVersion::Version1: // Uplay
+                sAddresses::ShadowMap = baseAddr + 0x117CD73 + 3; // +3 to skip opcode
+                sAddresses::Cloth = baseAddr + 0x11BFBB3;
+                sAddresses::LodLevel = baseAddr + 0x11FB1F;
+                sAddresses::ForceLod0 = baseAddr + 0x11BFCFC;
+                sAddresses::CheckChar = baseAddr + 0x11BFE8F;
+                sAddresses::CheckCharOut = baseAddr + 0x11BFE96;
+                return true;
+            case GameVersion::Version2: // Retail 1.01
+                sAddresses::ShadowMap = baseAddr + 0x6B9C13 + 3;
+                sAddresses::Cloth = baseAddr + 0x6FCE43;
+                sAddresses::LodLevel = baseAddr + 0x1495AF;
+                sAddresses::ForceLod0 = baseAddr + 0x6FCF8C;
+                sAddresses::CheckChar = baseAddr + 0x6FD11F;
+                sAddresses::CheckCharOut = baseAddr + 0x6FD126;
+                return true;
+            default:
+                return false;
+            }
+        }
+    }
+
     // --- Shadow Map Patch ---
     struct ShadowMapPatch : AutoAssemblerCodeHolder_Base
     {
@@ -28,8 +72,8 @@ namespace AC2EaglePatch
     // _AddHWGraphicObjectInstances_forceLod0 hook
     void Hook_ForceLod0(AllRegisters* params)
     {
-        // Force lod0
-        // mov [ebp-10h], 0
+        // Force LOD0 for specific objects (Cloth/Characters)
+        // mov [ebp-10h], 0  ; Set local variable to 0
         *(uint32_t*)(params->ebp - 0x10) = 0;
         // xor eax, eax
         params->eax = 0;
@@ -45,27 +89,26 @@ namespace AC2EaglePatch
 
         if (entityPtr)
         {
+            // Check entity flags to identify characters
             // mov ecx, [edx+60h]
             uint32_t flags = *(uint32_t*)(entityPtr + 0x60);
             // shr ecx, 12h; test cl, 1
             if ((flags >> 0x12) & 1)
             {
-                // It is a character, force LOD0
+                // Entity is a character, force LOD0
                 params->eax = 0;
                 *(uint32_t*)(params->ebp - 0x10) = 0;
             }
         }
 
-        // Original code we replaced (stolen bytes logic)
-        // mov cl, [ebx+28h]
-        // mov edi, [ebx+eax*4+14h]
-        
+        // Execute original instructions (stolen bytes simulation)
+        // mov cl, [ebx+28h] (Note: Only updating CL part of ECX)
         uint32_t ebx = params->ebx;
         uint32_t eax = params->eax;
-        
         uint8_t cl = *(uint8_t*)(ebx + 0x28);
-        params->ecx = (params->ecx & 0xFFFFFF00) | cl; // Set CL part of ECX
+        params->ecx = (params->ecx & 0xFFFFFF00) | cl;
         
+        // mov edi, [ebx+eax*4+14h]
         params->edi = *(uint32_t*)(ebx + eax * 4 + 0x14);
     }
 
@@ -73,35 +116,15 @@ namespace AC2EaglePatch
     {
         DrawDistanceHooks(uintptr_t forceLod0, uintptr_t checkChar, uintptr_t checkCharJumpOut, uintptr_t lodLevelCalc)
         {
-            // 1. Force LOD0 Hook
-            // Stolen bytes: 5 bytes (usually calls/instructions)
-            // But here we want to inject logic.
-            // The original code was likely customized in the manual assembly version.
-            // Let's see: In manual version:
-            // inst_force = { db(0xE9), RIP(inst_cave) };
-            // inst_cave = { "31 C0", "89 45 F0", db(0xE9), RIP(check_char) };
-            // Original instruction at forceLod0_inst_addr is likely what we overwrite.
-            // Wait, we are overwriting `forceLod0` address.
-            // `PresetScript_CCodeInTheMiddle` will replace 5 bytes at `forceLod0` with a call to our wrapper.
-            // We pass `checkChar` as `whereToReturn`? 
-            // In manual version: `jmp check_char`.
-            // So we want to return to `checkChar`.
-            // `Hook_ForceLod0` does the logic.
-            // `executeStolenBytes` = false because we are replacing logic entirely/manually handling it?
-            // Actually, the manual version didn't execute original bytes at `forceLod0`. It replaced them with logic then jumped to `check_char`.
-            // So executeStolenBytes = false.
-            
+            // 1. Hook ForceLod0 -> Jumps to CheckIsCharacter logic
+            // We skip original bytes and custom-route the flow to the character check
             PresetScript_CCodeInTheMiddle(forceLod0, 5, Hook_ForceLod0, checkChar, false);
 
-            // 2. Check Is Character Hook
-            // Manual version:
-            // check_char = { db(0xE9), RIP(char_cave) };
-            // char_cave logic... then `jmp check_char_out`.
-            // We want to return to `checkCharJumpOut`.
+            // 2. Hook CheckIsCharacter -> Returns to main flow (checkCharJumpOut)
             PresetScript_CCodeInTheMiddle(checkChar, 5, Hook_CheckIsCharacter, checkCharJumpOut, false);
 
-            // 3. LOD Level from Distance (PatchJump)
-            // PatchJump(sAddresses::_GetLODLevelFromDistance_forceMaxLod, sAddresses::_GetLODLevelFromDistance_forceMaxLod + 0x44);
+            // 3. Force Maximum LOD Level from Distance calculation
+            // Jumps over the distance check to always return high quality LOD
             DEFINE_ADDR(lod_src, lodLevelCalc);
             DEFINE_ADDR(lod_dst, lodLevelCalc + 0x44);
             lod_src = { db(0xE9), RIP(lod_dst) };
@@ -110,44 +133,21 @@ namespace AC2EaglePatch
 
     void InitGraphics(uintptr_t baseAddr, GameVersion version, bool shadows, bool drawDistance)
     {
-        uintptr_t shadowMapAddr = 0;
-        uintptr_t clothAddr = 0, lodLevelAddr = 0, forceLod0Addr = 0, checkCharAddr = 0, checkCharOutAddr = 0;
-
-        switch (version)
-        {
-        case GameVersion::Version1: // Uplay
-            shadowMapAddr = baseAddr + 0x117CD73 + 3; // +3 to skip opcode
-            clothAddr = baseAddr + 0x11BFBB3;
-            lodLevelAddr = baseAddr + 0x11FB1F;
-            forceLod0Addr = baseAddr + 0x11BFCFC;
-            checkCharAddr = baseAddr + 0x11BFE8F;
-            checkCharOutAddr = baseAddr + 0x11BFE96;
-            break;
-
-        case GameVersion::Version2: // Retail 1.01
-            shadowMapAddr = baseAddr + 0x6B9C13 + 3;
-            clothAddr = baseAddr + 0x6FCE43;
-            lodLevelAddr = baseAddr + 0x1495AF;
-            forceLod0Addr = baseAddr + 0x6FCF8C;
-            checkCharAddr = baseAddr + 0x6FD11F;
-            checkCharOutAddr = baseAddr + 0x6FD126;
-            break;
-
-        default: return;
-        }
+        if (!ResolveAddresses(baseAddr, version))
+            return;
 
         // Shadow Map
         if (shadows) {
-            static AutoAssembleWrapper<ShadowMapPatch> shadowPatch(shadowMapAddr);
+            static AutoAssembleWrapper<ShadowMapPatch> shadowPatch(sAddresses::ShadowMap);
             shadowPatch.Activate();
         }
 
         // Draw Distance
         if (drawDistance) {
-            static AutoAssembleWrapper<DrawDistancePatches> ddPatch(clothAddr);
+            static AutoAssembleWrapper<DrawDistancePatches> ddPatch(sAddresses::Cloth);
             ddPatch.Activate();
 
-            static AutoAssembleWrapper<DrawDistanceHooks> ddHooks(forceLod0Addr, checkCharAddr, checkCharOutAddr, lodLevelAddr);
+            static AutoAssembleWrapper<DrawDistanceHooks> ddHooks(sAddresses::ForceLod0, sAddresses::CheckChar, sAddresses::CheckCharOut, sAddresses::LodLevel);
             ddHooks.Activate();
         }
 

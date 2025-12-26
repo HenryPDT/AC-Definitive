@@ -152,7 +152,7 @@ namespace BaseHook
                 
             HRESULT hr = Data::oReset(pDevice, pParamsToUse);
             
-            if (SUCCEEDED(hr) && WindowedMode::ShouldHandle())
+            if (SUCCEEDED(hr))
             {
                 IDirect3DSurface9* pBackBuffer = nullptr;
                 if (SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer))) {
@@ -176,6 +176,84 @@ namespace BaseHook
                 }
             }
                 
+            return hr;
+        }
+
+        HRESULT __stdcall hkResetEx(IDirect3DDevice9Ex* pDevice, D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode)
+        {
+            WindowedMode::CheckAndApplyPendingState();
+
+            if (pPresentationParameters)
+            {
+                WindowedMode::UpdateDetectedStateDX9(!pPresentationParameters->Windowed);
+            }
+
+            D3DPRESENT_PARAMETERS params = *pPresentationParameters;
+            D3DPRESENT_PARAMETERS* pParamsToUse = pPresentationParameters;
+            D3DDISPLAYMODEEX* pFullscreenModeToUse = pFullscreenDisplayMode;
+
+            if ((WindowedMode::ShouldHandle() || WindowedMode::ShouldApplyResolutionOverride()) && pPresentationParameters)
+            {
+                if (params.BackBufferWidth == 0 && params.BackBufferHeight == 0 && WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent)
+                {
+                    params.BackBufferWidth = WindowedMode::g_State.virtualWidth;
+                    params.BackBufferHeight = WindowedMode::g_State.virtualHeight;
+                    LOG_INFO("D3D9Ex ResetEx: Auto-size blocked by ScaleContent. Enforcing %dx%d", params.BackBufferWidth, params.BackBufferHeight);
+                }
+
+                if (WindowedMode::g_State.overrideWidth > 0 && WindowedMode::g_State.overrideHeight > 0)
+                {
+                    params.BackBufferWidth = WindowedMode::g_State.overrideWidth;
+                    params.BackBufferHeight = WindowedMode::g_State.overrideHeight;
+                }
+
+                LOG_INFO("D3D9Ex ResetEx: Windowed=%d, Size=%dx%d", pPresentationParameters->Windowed, params.BackBufferWidth, params.BackBufferHeight);
+
+                if (params.BackBufferWidth > 0 && params.BackBufferHeight > 0) {
+                    WindowedMode::NotifyResolutionChange(params.BackBufferWidth, params.BackBufferHeight);
+                }
+
+                if (WindowedMode::ShouldHandle()) {
+                    params.Windowed = TRUE;
+                    params.FullScreen_RefreshRateInHz = 0;
+                    // Force pFullscreenDisplayMode to NULL in windowed mode
+                    pFullscreenModeToUse = nullptr;
+                }
+                pParamsToUse = &params;
+
+                if (WindowedMode::ShouldHandle())
+                    WindowedMode::Apply(Data::hWindow);
+            }
+
+            // Invalidate BEFORE calling original ResetEx
+            if (Data::bIsInitialized)
+                ImGui_ImplDX9_InvalidateDeviceObjects();
+
+            HRESULT hr = Data::oResetEx(pDevice, pParamsToUse, pFullscreenModeToUse);
+
+            if (SUCCEEDED(hr))
+            {
+                IDirect3DSurface9* pBackBuffer = nullptr;
+                if (SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer))) {
+                    D3DSURFACE_DESC desc;
+                    pBackBuffer->GetDesc(&desc);
+                    pBackBuffer->Release();
+                    WindowedMode::NotifyResolutionChange(desc.Width, desc.Height);
+                }
+            }
+
+            // Restore AFTER calling original ResetEx
+            if (SUCCEEDED(hr) && Data::bIsInitialized)
+            {
+                ImGui_ImplDX9_CreateDeviceObjects();
+
+                if (Data::g_fakeResetState != BaseHook::FakeResetState::Clear)
+                {
+                    Data::g_fakeResetState = BaseHook::FakeResetState::Clear;
+                    LOG_INFO("Fake Device ResetEx Completed Successfully.");
+                }
+            }
+
             return hr;
         }
     }

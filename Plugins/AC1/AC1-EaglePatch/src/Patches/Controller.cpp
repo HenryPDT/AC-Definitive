@@ -81,7 +81,7 @@ namespace AC1EaglePatch
                 sAddresses::_PadProxyPC_Patch = baseAddr + 0x509C90;
                 sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x161E680);
                 ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x524070);
-                ac_allocate = (t_ac_allocate)(baseAddr + 0x3A4510);
+                ac_allocate = (t_ac_allocate)(baseAddr + 0x3A4510);     
                 ac_delete = (t_ac_delete)(baseAddr + 0x516440);
                 break;
 
@@ -90,6 +90,15 @@ namespace AC1EaglePatch
             }
             return true;
         }
+    }
+
+    // --- Allocators (Wrappers to match AC2/ACB/ACR structure) ---
+    void* ac_allocate_wrapper(int a1, uint32_t a2, void* a3, const void* a4, const char* a5, const char* a6, uint32_t a7, const char* a8) {
+        if (ac_allocate) return ac_allocate(a1, a2, a3, a4, a5, a6, a7, a8);
+        return nullptr;
+    }
+    void ac_delete_wrapper(void* ptr, void* a2, const char* a3) {
+        if (ac_delete) ac_delete(ptr, a2, a3);
     }
 
     // --- Wrapper Calls ---
@@ -105,7 +114,7 @@ namespace AC1EaglePatch
         return ((bool(__thiscall*)(PadProxyPC*, scimitar::Pad*, PadType, const wchar_t*, uint16_t, uint16_t))sAddresses::PadProxyPC_AddPad)(this, a, b, c, d, e);
     }
     void scimitar::PadXenon::operator_new(size_t size, void** out) {
-        *out = ac_allocate(2, sizeof(PadXenon), ac_getNewDescriptor(sizeof(PadXenon), 16, *sAddresses::_descriptor_var), nullptr, nullptr, nullptr, 0, nullptr);
+        *out = ac_allocate_wrapper(2, sizeof(PadXenon), ac_getNewDescriptor(sizeof(PadXenon), 16, *sAddresses::_descriptor_var), nullptr, nullptr, nullptr, 0, nullptr);
     }
 
     // --- Injection Function ---
@@ -128,7 +137,7 @@ namespace AC1EaglePatch
                 if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] XInput Controller successfully injected.");
             } else {
                 // Failed to add pad, cleanup memory to prevent leak
-                ac_delete(padXenon, nullptr, nullptr);
+                ac_delete_wrapper(padXenon, nullptr, nullptr);
                 padXenon = nullptr;
             }
         }

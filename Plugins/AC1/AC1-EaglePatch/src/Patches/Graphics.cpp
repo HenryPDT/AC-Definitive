@@ -6,6 +6,57 @@
 
 namespace AC1EaglePatch
 {
+    struct sAddresses {
+        static uintptr_t MSAA_1;
+        static uintptr_t MSAA_2;
+        static uintptr_t MSAA_3;
+        static uintptr_t DX10_Check1;
+        static uintptr_t DX10_Check2;
+        static uintptr_t DX10_Hook;
+    };
+
+    uintptr_t sAddresses::MSAA_1 = 0;
+    uintptr_t sAddresses::MSAA_2 = 0;
+    uintptr_t sAddresses::MSAA_3 = 0;
+    uintptr_t sAddresses::DX10_Check1 = 0;
+    uintptr_t sAddresses::DX10_Check2 = 0;
+    uintptr_t sAddresses::DX10_Hook = 0;
+
+    struct D3D10ResolutionContainer;
+    // Pointers to game functions
+    using t_GetDisplayModes = void(__thiscall*)(D3D10ResolutionContainer*, IDXGIOutput*);
+    using t_FindCurrentResolutionMode = void(__thiscall*)(D3D10ResolutionContainer*, uint32_t, uint32_t, uint32_t);
+
+    t_GetDisplayModes fnGetDisplayModes = nullptr;
+    t_FindCurrentResolutionMode fnFindCurrentResolutionMode = nullptr;
+
+    namespace
+    {
+        bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
+        {
+            switch (version)
+            {
+            case GameVersion::Version1: // DX10
+                sAddresses::MSAA_1 = baseAddr + 0xC64252;
+                sAddresses::MSAA_2 = baseAddr + 0xC63F9D;
+                sAddresses::MSAA_3 = baseAddr + 0xC63FA8;
+                sAddresses::DX10_Check1 = baseAddr + 0x3BAD2E + 1;
+                sAddresses::DX10_Check2 = baseAddr + 0x3BAD70 + 1;
+                sAddresses::DX10_Hook   = baseAddr + 0x3F343D;
+                fnGetDisplayModes = (t_GetDisplayModes)(baseAddr + 0x3BAD20);
+                fnFindCurrentResolutionMode = (t_FindCurrentResolutionMode)(baseAddr + 0x3BA770);
+                return true;
+            case GameVersion::Version2: // DX9
+                sAddresses::MSAA_1 = baseAddr + 0xA91422;
+                sAddresses::MSAA_2 = baseAddr + 0xA9116D;
+                sAddresses::MSAA_3 = baseAddr + 0xA91178;
+                return true;
+            default:
+                return false;
+            }
+        }
+    }
+
     // --- Multisampling Patch ---
     struct MultisamplingPatch : AutoAssemblerCodeHolder_Base
     {
@@ -46,24 +97,23 @@ namespace AC1EaglePatch
         uint32_t modesNum;
         uint32_t _8;
 
-        // Function pointers need to be set at runtime
-        static inline void(__thiscall* _GetDisplayModes)(D3D10ResolutionContainer*, IDXGIOutput*) = nullptr;
-        static inline void(__thiscall* _FindCurrentResolutionMode)(D3D10ResolutionContainer*, uint32_t, uint32_t, uint32_t) = nullptr;
-
-        void GetDisplayModes(IDXGIOutput* a1) { if (_GetDisplayModes) _GetDisplayModes(this, a1); }
-        void FindCurrentResolutionMode(uint32_t w, uint32_t h, uint32_t r) { if (_FindCurrentResolutionMode) _FindCurrentResolutionMode(this, w, h, r); }
+        void GetDisplayModes(IDXGIOutput* a1) { if (fnGetDisplayModes) fnGetDisplayModes(this, a1); }
+        void FindCurrentResolutionMode(uint32_t w, uint32_t h, uint32_t r) { if (fnFindCurrentResolutionMode) fnFindCurrentResolutionMode(this, w, h, r); }
     };
 
-    bool IsDisplayModeAlreadyAdded(const DXGI_MODE_DESC& mode, const std::vector<DXGI_MODE_DESC>& newModes)
+    namespace
     {
-        for (const auto& existing : newModes)
+        bool IsDisplayModeAlreadyAdded(const DXGI_MODE_DESC& mode, const std::vector<DXGI_MODE_DESC>& newModes)
         {
-            if (existing.Width == mode.Width && existing.Height == mode.Height
-                && existing.RefreshRate.Numerator == mode.RefreshRate.Numerator
-                && existing.Format == mode.Format && existing.ScanlineOrdering == mode.ScanlineOrdering)
-                return true;
+            for (const auto& existing : newModes)
+            {
+                if (existing.Width == mode.Width && existing.Height == mode.Height
+                    && existing.RefreshRate.Numerator == mode.RefreshRate.Numerator
+                    && existing.Format == mode.Format && existing.ScanlineOrdering == mode.ScanlineOrdering)
+                    return true;
+            }
+            return false;
         }
-        return false;
     }
 
     // This function will be called from the hook
@@ -110,42 +160,11 @@ namespace AC1EaglePatch
             // Patch the call site with a JMP to cave
             hook_loc = { db(0xE9), RIP(cave) };
 
-            // Cave implementation
-            // We are hooking a CALL instruction: call RelativeAddr
-            // The original function expects ECX (this) and 1 argument on stack.
-            // Our Hook_GetDisplayModes is __fastcall: ECX = this, EDX = unused, Stack = args.
-            // However, the original call pushes arg then calls.
-            // So:
-            // Stack at entry to cave: [RetAddr of caller] [Arg] ...
-            // We want to call Hook_GetDisplayModes(thisPtr, edx, arg)
-            // __fastcall passes first 2 args in ECX, EDX.
-            // ECX is already set by caller (it's a method call).
-            // We can just call our function.
-            // BUT: Hook_GetDisplayModes signature matches what the wrapper needs.
-            // __fastcall: ECX=this, EDX=dummy. Arg is on stack.
-            // This matches cleanly if we just CALL it, provided we clean up or match calling convention.
-            // Actually, we are replacing a `call MemberFunc`.
-            // We can just call our static function if we ensure register state is correct.
-            
-            // Wait, Hook_GetDisplayModes is `void __fastcall(D3D10ResolutionContainer* thisPtr, void* edx, IDXGIOutput* a1)`
-            // Calling convention __fastcall:
-            // ECX = 1st arg (thisPtr) -> Matches
-            // EDX = 2nd arg (void* edx) -> Garbage/Unused -> Matches
-            // Stack = 3rd arg (IDXGIOutput* a1) -> Matches (pushed by caller)
-            // So we can just call it directly!
-            // BUT: The original code does `call MemberFunc`. 
-            // `MemberFunc` is `thiscall`.
-            // `thiscall` (MSVC): ECX = this, rest on stack. Callee cleans stack.
-            // `fastcall` (MSVC): ECX, EDX, rest on stack. Callee cleans stack.
-            //
-            // Our Hook function takes (thisPtr, dummy, a1).
-            // ECX = thisPtr.
-            // EDX = dummy.
-            // a1 is on stack.
-            //
-            // If we define Hook_GetDisplayModes as __fastcall, it expects to clean up `a1` from stack (ret 4).
-            // The caller pushed `a1`.
-            // So this works perfectly.
+            // Cave implementation:
+            // The original instruction was a `call MemberFunc` (thiscall).
+            // We redirect to our static __fastcall function `Hook_GetDisplayModes`.
+            // __fastcall (ECX, EDX, Stack) matches the register state of `thiscall` (ECX, Stack)
+            // regarding ECX ('this') and the Stack args, effectively treating EDX as a dummy arg.
             
             cave = {
                 "FF 15", ABS(fnVar, 4), // Call dword ptr [fnVar]
@@ -160,60 +179,26 @@ namespace AC1EaglePatch
 
     void InitGraphics(uintptr_t baseAddr, GameVersion version, bool enableMSAAFix, bool fixDX10Resolution)
     {
-        // Multisampling Addresses
-        uintptr_t ms1 = 0, ms2 = 0, ms3 = 0;
-        
-        // DX10 Fix Addresses
-        uintptr_t dx10_check1 = 0, dx10_check2 = 0, dx10_hook = 0;
-        bool isDX10 = false;
-
-        switch (version)
-        {
-        case GameVersion::Version1: // DX10
-            ms1 = baseAddr + 0xC64252;
-            ms2 = baseAddr + 0xC63F9D;
-            ms3 = baseAddr + 0xC63FA8;
-
-            dx10_check1 = baseAddr + 0x3BAD2E + 1;
-            dx10_check2 = baseAddr + 0x3BAD70 + 1;
-            dx10_hook   = baseAddr + 0x3F343D;
-
-            // Setup function pointers for DX10 fix
-            D3D10ResolutionContainer::_GetDisplayModes = (void(__thiscall*)(D3D10ResolutionContainer*, IDXGIOutput*))(baseAddr + 0x3BAD20);
-            D3D10ResolutionContainer::_FindCurrentResolutionMode = (void(__thiscall*)(D3D10ResolutionContainer*, uint32_t, uint32_t, uint32_t))(baseAddr + 0x3BA770);
-            isDX10 = true;
-            break;
-
-        case GameVersion::Version2: // DX9
-            ms1 = baseAddr + 0xA91422;
-            ms2 = baseAddr + 0xA9116D;
-            ms3 = baseAddr + 0xA91178;
-            break;
-
-        default: return;
-        }
+        if (!ResolveAddresses(baseAddr, version))
+            return;
 
         if (enableMSAAFix)
         {
             // Apply Multisampling Patch
-            static AutoAssembleWrapper<MultisamplingPatch> msPatch(ms1, ms2, ms3);
+            static AutoAssembleWrapper<MultisamplingPatch> msPatch(sAddresses::MSAA_1, sAddresses::MSAA_2, sAddresses::MSAA_3);
             msPatch.Activate();
         }
 
-        if (isDX10 && fixDX10Resolution)
+        // Apply DX10 Duplicate Resolution Fix only if addresses were found (i.e., we are on DX10 version)
+        if (fixDX10Resolution && sAddresses::DX10_Hook != 0)
         {
-            // Apply Duplicate Resolution Fix
-            static AutoAssembleWrapper<DX10ResolutionPatch> resPatch(dx10_check1, dx10_check2);
+            static AutoAssembleWrapper<DX10ResolutionPatch> resPatch(sAddresses::DX10_Check1, sAddresses::DX10_Check2);
             resPatch.Activate();
 
-            static AutoAssembleWrapper<DX10GetDisplayModesHook> hookPatch(dx10_hook);
+            static AutoAssembleWrapper<DX10GetDisplayModesHook> hookPatch(sAddresses::DX10_Hook);
             hookPatch.Activate();
 
             if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Graphics fixes applied (DX10).");
-        }
-        else
-        {
-            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Graphics fixes applied (DX9).");
         }
     }
 }

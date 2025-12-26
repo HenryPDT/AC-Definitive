@@ -327,6 +327,16 @@ namespace BaseHook
         {
             if (!ShouldHandle() || g_State.inInternalChange || !hWnd || !IsWindow(hWnd)) return;
 
+            // SAFETY: If the game changed display settings (resolution) before we hooked it,
+            // we need to revert to desktop settings to ensure our windowed mode renders correctly.
+            // We do this cheaply by checking if we haven't done it recently.
+            static bool s_DisplaySettingsReset = false;
+            if (!s_DisplaySettingsReset) {
+                LOG_INFO("WindowedMode::Apply: Resetting Display Settings to Desktop Default.");
+                ChangeDisplaySettingsA(NULL, 0);
+                s_DisplaySettingsReset = true;
+            }
+
             g_State.hWnd = hWnd;
             
             // Optimization: Read current state first (Bypass hooks to get TRUE style)

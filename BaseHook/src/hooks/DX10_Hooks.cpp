@@ -13,6 +13,9 @@ namespace BaseHook
 
         HRESULT __stdcall hkResizeBuffersDX10(IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT SwapChainFlags)
         {
+            // Ensure we have initialized our state/hooks for this swapchain
+            DXGICommon::EnsureInitialized(DXGICommon::Api::D3D10, pSwapChain);
+
             return DXGICommon::ResizeBuffers(DXGICommon::Api::D3D10, pSwapChain, BufferCount, Width, Height, NewFormat, SwapChainFlags);
         }
 

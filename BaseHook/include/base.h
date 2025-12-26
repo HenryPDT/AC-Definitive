@@ -12,6 +12,7 @@
 // DX9 Types
 typedef long(__stdcall* EndScene_t)(LPDIRECT3DDEVICE9);
 typedef HRESULT(__stdcall* Reset_t)(LPDIRECT3DDEVICE9, D3DPRESENT_PARAMETERS*);
+typedef HRESULT(__stdcall* ResetEx_t)(IDirect3DDevice9Ex*, D3DPRESENT_PARAMETERS*, D3DDISPLAYMODEEX*);
 typedef HRESULT(__stdcall* Present9_t)(LPDIRECT3DDEVICE9, CONST RECT*, CONST RECT*, HWND, CONST RGNDATA*);
 typedef HRESULT(__stdcall* TestCooperativeLevel_t)(LPDIRECT3DDEVICE9);
 
@@ -93,6 +94,7 @@ namespace BaseHook
         extern IDirect3DDevice9* pDevice;
         extern EndScene_t        oEndScene;
         extern Reset_t           oReset;
+        extern ResetEx_t         oResetEx;
         extern Present9_t        oPresent9;
         extern TestCooperativeLevel_t oTestCooperativeLevel;
         extern std::atomic<FakeResetState> g_fakeResetState;
@@ -128,6 +130,7 @@ namespace BaseHook
         // Hook declarations
         HRESULT __stdcall hkEndScene(LPDIRECT3DDEVICE9 pDevice);
         HRESULT __stdcall hkReset(LPDIRECT3DDEVICE9 pDevice, D3DPRESENT_PARAMETERS* pPresentationParameters);
+        HRESULT __stdcall hkResetEx(IDirect3DDevice9Ex* pDevice, D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
         HRESULT __stdcall hkPresent9(LPDIRECT3DDEVICE9 pDevice, CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion);
         HRESULT __stdcall hkTestCooperativeLevel(LPDIRECT3DDEVICE9 pDevice);
         HRESULT __stdcall hkPresentDX11(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags);

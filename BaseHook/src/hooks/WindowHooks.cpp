@@ -318,18 +318,57 @@ namespace BaseHook
                     hWndInsertAfter = HWND_NOTOPMOST;
                 }
 
-                // Enforce ScaleContent window size/pos if game tries to change it
-                if (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent)
+                // Enforce Position/Size if game tries to change it
+                // Logic:
+                // 1. If ScaleContent, enforce fixed Size.
+                // 2. Always enforce fixed Position (or Center) to prevent D3D from moving window to (0,0) on Reset.
+
+                bool enforceSize = (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent);
+                bool enforcePos = true;
+
+                if (enforceSize)
                 {
                     if (!(uFlags & SWP_NOSIZE)) {
                         cx = WindowedMode::g_State.windowWidth;
                         cy = WindowedMode::g_State.windowHeight;
                     }
-                    if (!(uFlags & SWP_NOMOVE)) {
-                        // Only enforce if we have a valid position preference
-                        if (WindowedMode::g_State.windowX != -1) X = WindowedMode::g_State.windowX;
-                        if (WindowedMode::g_State.windowY != -1) Y = WindowedMode::g_State.windowY;
+                }
+
+                if (enforcePos && !(uFlags & SWP_NOMOVE))
+                {
+                    // We need to determine the effective width/height to calculate center
+                    int w = cx;
+                    int h = cy;
+                    if (uFlags & SWP_NOSIZE) {
+                        RECT rc;
+                        if (Data::oGetWindowRect) ((GetWindowRect_t)Data::oGetWindowRect)(hWnd, &rc);
+                        else GetWindowRect(hWnd, &rc);
+                        w = rc.right - rc.left;
+                        h = rc.bottom - rc.top;
                     }
+
+                    int desiredX = WindowedMode::g_State.windowX;
+                    int desiredY = WindowedMode::g_State.windowY;
+
+                    // If set to Center (-1), calculate centered coordinates
+                    if (desiredX == -1 || desiredY == -1) {
+                        RECT monitorRect = { 0,0,0,0 };
+                        const auto& mons = WindowedMode::GetMonitors();
+                        if (WindowedMode::g_State.targetMonitor >= 0 && WindowedMode::g_State.targetMonitor < (int)mons.size()) {
+                            monitorRect = mons[WindowedMode::g_State.targetMonitor].rect;
+                        }
+                        else {
+                            int sW = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CXSCREEN) : GetSystemMetrics(SM_CXSCREEN);
+                            int sH = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CYSCREEN) : GetSystemMetrics(SM_CYSCREEN);
+                            monitorRect = { 0, 0, sW, sH };
+                        }
+
+                        if (desiredX == -1) desiredX = monitorRect.left + (monitorRect.right - monitorRect.left - w) / 2;
+                        if (desiredY == -1) desiredY = monitorRect.top + (monitorRect.bottom - monitorRect.top - h) / 2;
+                    }
+
+                    X = desiredX;
+                    Y = desiredY;
                 }
             }
             return oSetWindowPos(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
@@ -338,13 +377,37 @@ namespace BaseHook
         BOOL WINAPI hkMoveWindow(HWND hWnd, int X, int Y, int nWidth, int nHeight, BOOL bRepaint)
         {
             if (WindowedMode::ShouldHandle() && hWnd == Data::hWindow && !WindowedMode::g_State.inInternalChange) {
-                 if (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent)
-                 {
-                     nWidth = WindowedMode::g_State.windowWidth;
-                     nHeight = WindowedMode::g_State.windowHeight;
-                     if (WindowedMode::g_State.windowX != -1) X = WindowedMode::g_State.windowX;
-                     if (WindowedMode::g_State.windowY != -1) Y = WindowedMode::g_State.windowY;
-                 }
+                bool enforceSize = (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent);
+                bool enforcePos = true;
+
+                if (enforceSize) {
+                    nWidth = WindowedMode::g_State.windowWidth;
+                    nHeight = WindowedMode::g_State.windowHeight;
+                }
+
+                if (enforcePos) {
+                    int desiredX = WindowedMode::g_State.windowX;
+                    int desiredY = WindowedMode::g_State.windowY;
+
+                    if (desiredX == -1 || desiredY == -1) {
+                        RECT monitorRect = { 0,0,0,0 };
+                        const auto& mons = WindowedMode::GetMonitors();
+                        if (WindowedMode::g_State.targetMonitor >= 0 && WindowedMode::g_State.targetMonitor < (int)mons.size()) {
+                            monitorRect = mons[WindowedMode::g_State.targetMonitor].rect;
+                        }
+                        else {
+                            int sW = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CXSCREEN) : GetSystemMetrics(SM_CXSCREEN);
+                            int sH = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CYSCREEN) : GetSystemMetrics(SM_CYSCREEN);
+                            monitorRect = { 0, 0, sW, sH };
+                        }
+
+                        if (desiredX == -1) desiredX = monitorRect.left + (monitorRect.right - monitorRect.left - nWidth) / 2;
+                        if (desiredY == -1) desiredY = monitorRect.top + (monitorRect.bottom - monitorRect.top - nHeight) / 2;
+                    }
+
+                    X = desiredX;
+                    Y = desiredY;
+                }
             }
             return oMoveWindow(hWnd, X, Y, nWidth, nHeight, bRepaint);
         }
@@ -432,24 +495,20 @@ namespace BaseHook
 
         BOOL WINAPI hkGetCursorPos(LPPOINT lpPoint)
         {
+            // Always return true Screen Coordinates.
+            // Scaling to Virtual Resolution should happen in ScreenToClient or WndProc, not here.
             BOOL res = oGetCursorPos(lpPoint);
-            if (res && WindowedMode::ShouldHandle() && WindowedMode::g_State.hWnd) {
-                // Physical Screen -> Physical Client
-                ((ScreenToClient_t)Data::oScreenToClient)(WindowedMode::g_State.hWnd, lpPoint);
-                WindowedMode::PhysicalClientToVirtual(WindowedMode::g_State.hWnd, *lpPoint);
-            }
             return res;
         }
 
         BOOL WINAPI hkSetCursorPos(int x, int y)
         {
-            if (WindowedMode::ShouldHandle() && WindowedMode::g_State.hWnd) {
-                POINT pt = { x, y };
-                WindowedMode::VirtualClientToPhysical(WindowedMode::g_State.hWnd, pt);
-                // Physical Client -> Physical Screen
-                ((ClientToScreen_t)Data::oClientToScreen)(WindowedMode::g_State.hWnd, &pt);
-                return oSetCursorPos(pt.x, pt.y);
-            }
+            // Pass-through to original.
+            // Rationale: SetCursorPos takes global Screen Coordinates.
+            // 1. If the game is windowed-aware, it calls ClientToScreen first.
+            //    Our hkClientToScreen converts Virtual -> Physical -> Screen. Result is correct.
+            // 2. If the game assumes fullscreen (0,0 is top-left), passing those to SetCursorPos
+            //    moves the cursor to top-left of monitor. Translating this heuristically is unreliable.
             return oSetCursorPos(x, y);
         }
 
@@ -527,8 +586,15 @@ namespace BaseHook
             ResultT res = original(hWnd, nIndex);
             if (WindowedMode::ShouldHandle() && hWnd == Data::hWindow) {
                 if (nIndex == GWL_STYLE) {
-                    if (WindowedMode::g_State.activeMode == WindowedMode::Mode::BorderlessFullscreen)
-                        res = (res & ~WS_OVERLAPPEDWINDOW) | WS_POPUP;
+                    if (WindowedMode::g_State.activeMode == WindowedMode::Mode::BorderlessFullscreen || 
+                        WindowedMode::g_State.activeMode == WindowedMode::Mode::Borderless)
+                    {
+                        res = (res & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)) | WS_POPUP;
+                    }
+                    else if (WindowedMode::g_State.activeMode == WindowedMode::Mode::Bordered)
+                    {
+                        res = (res & ~WS_POPUP) | WS_OVERLAPPEDWINDOW;
+                    }
                 }
             }
             return res;
