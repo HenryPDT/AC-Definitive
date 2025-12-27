@@ -85,6 +85,29 @@ namespace
         // Not implemented for now
     }
 
+    // Helper for polling hotkeys with "rising edge" detection
+    struct HotkeyPoller
+    {
+        KeyBind lastBind;
+        bool wasDown = false;
+
+        // Returns true if the action should trigger (pressed this frame, wasn't pressed last frame)
+        bool Update(const KeyBind& currentBind)
+        {
+            // Reset state if bind changes to prevent accidental triggers
+            if (currentBind != lastBind)
+            {
+                if (currentBind.IsPressed()) wasDown = true;
+                lastBind = currentBind;
+            }
+
+            bool pressed = currentBind.IsPressed();
+            bool triggered = pressed && !wasDown;
+            wasDown = pressed;
+            return triggered;
+        }
+    };
+
     LRESULT __stdcall LoaderWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         bool renderInBackground = PluginLoaderConfig::g_Config.RenderInBackground.get();
@@ -173,20 +196,11 @@ namespace
         // Handle our own hotkeys, but only if an ImGui window doesn't want keyboard input.
         if (BaseHook::Data::bIsInitialized && !ImGui::GetIO().WantCaptureKeyboard)
         {
-            if (PluginLoaderConfig::g_Config.hotkey_ToggleMenu.get().IsPressedEvent(uMsg, wParam))
-            {
-                BaseHook::Data::bShowMenu = !BaseHook::Data::bShowMenu;
-            }
-            else if (uMsg == WM_KEYDOWN && wParam == BaseHook::Keys::DetachDll)
+            if (uMsg == WM_KEYDOWN && wParam == BaseHook::Keys::DetachDll)
             {
                 BaseHook::Detach();
                 if (auto* app = PluginLoaderApp::Get())
                     app->RequestShutdown();
-            }
-            else if (PluginLoaderConfig::g_Config.hotkey_ToggleConsole.get().IsPressedEvent(uMsg, wParam))
-            {
-                if (auto* app = PluginLoaderApp::Get())
-                    app->GetConsole().ToggleVisibility();
             }
         }
 
@@ -270,13 +284,34 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
                 app->GetLoaderInterface().m_ImGuiContext = ImGui::GetCurrentContext();
         }
 
+        const HWND foreground = GetForegroundWindow();
+        const bool is_focused = (foreground == BaseHook::Data::hWindow);
+
+        // --- Controller/Keyboard Hotkey Polling ---
+        // Only poll if window is focused and ImGui doesn't want keyboard input
+        if (is_focused && !io.WantCaptureKeyboard)
+        {
+             static HotkeyPoller s_menuPoller;
+             static HotkeyPoller s_consolePoller;
+
+             if (s_menuPoller.Update(PluginLoaderConfig::g_Config.hotkey_ToggleMenu.get()))
+             {
+                 BaseHook::Data::bShowMenu = !BaseHook::Data::bShowMenu;
+             }
+
+             if (s_consolePoller.Update(PluginLoaderConfig::g_Config.hotkey_ToggleConsole.get()))
+             {
+                 if (auto* app = PluginLoaderApp::Get())
+                     app->GetConsole().ToggleVisibility();
+             }
+        }
+        // --------------------------------
+
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
 
         if (auto* app = PluginLoaderApp::Get())
             app->GetConsole().Draw("Console");
 
-        const HWND foreground = GetForegroundWindow();
-        const bool is_focused = (foreground == BaseHook::Data::hWindow);
         const ConsoleMode cm = (PluginLoaderApp::Get() ? PluginLoaderApp::Get()->GetConsole().mode : ConsoleMode::Hidden);
 
         BaseHook::Data::bImGuiMouseButtonsFromDirectInput = ShouldImGuiMouseButtonsUseDirectInput();
@@ -384,6 +419,9 @@ void PluginLoaderApp::Init()
     m_settings = std::make_unique<LoaderSettings>(LoaderWndProc);
     BaseHook::Start(m_settings.get());
     BaseHook::Data::thisDLLModule = m_module;
+
+    // Connect KeyBind system to BaseHook's Virtual Input
+    KeyBind::SetInputProvider(BaseHook::Hooks::TryGetVirtualXInputState);
 
     LOG_INFO("Basehook initialized successfully.");
 }

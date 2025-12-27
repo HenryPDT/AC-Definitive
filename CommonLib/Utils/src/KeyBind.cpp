@@ -1,7 +1,36 @@
 #include "KeyBind.h"
 #include <Windows.h>
-#include <vector>
+#include <xinput.h>
 #include <cstdio>
+
+KeyBind::InputProvider_t KeyBind::s_InputProvider = nullptr;
+
+void KeyBind::SetInputProvider(InputProvider_t provider)
+{
+    s_InputProvider = provider;
+}
+
+bool KeyBind::GetControllerState(unsigned int userIndex, XINPUT_STATE* state)
+{
+    // Use the virtual provider if available (hooks into BaseHook's unified input)
+    if (s_InputProvider)
+        return s_InputProvider(userIndex, state);
+    
+    // Strict Mode: Do not fallback to raw XInput functions here.
+    // We rely on the hook system to provide input to ensure overlay/game blocking works correctly.
+    return false; 
+}
+
+unsigned int KeyBind::GetGamepadFlags(const XINPUT_STATE& state)
+{
+    unsigned int buttons = state.Gamepad.wButtons;
+    // Map triggers to pseudo-buttons using standard threshold (30/255)
+    // We use the XInput definition or a safe fallback
+    const BYTE threshold = XINPUT_GAMEPAD_TRIGGER_THRESHOLD; 
+    if (state.Gamepad.bLeftTrigger > threshold) buttons |= PAD_L_TRIGGER;
+    if (state.Gamepad.bRightTrigger > threshold) buttons |= PAD_R_TRIGGER;
+    return buttons;
+}
 
 // ReShade-based Key Name Lookup Table
 static const char* g_KeyNames[256] = {
@@ -26,7 +55,6 @@ static const char* g_KeyNames[256] = {
 std::string KeyBind::GetKeyName(unsigned int vk)
 {
     if (vk >= 256) return "Unknown";
-    // Localize/Adjust specific keys if needed (e.g. Pos1 for German), keeping simple for now
     const char* name = g_KeyNames[vk];
     if (name && *name) return name;
     
@@ -37,41 +65,105 @@ std::string KeyBind::GetKeyName(unsigned int vk)
 
 std::string KeyBind::ToString() const
 {
-    if (Key == 0) return "None";
-
     std::string str;
-    if (Ctrl) str += "Ctrl + ";
-    if (Shift) str += "Shift + ";
-    if (Alt) str += "Alt + ";
-    str += GetKeyName(Key);
-    return str;
-}
+    
+    // Keyboard Part
+    if (KeyboardKey != 0)
+    {
+        if (Ctrl) str += "Ctrl + ";
+        if (Shift) str += "Shift + ";
+        if (Alt) str += "Alt + ";
+        str += GetKeyName(KeyboardKey);
+    }
 
-static bool IsKeyDown(int vk) {
-    return (GetAsyncKeyState(vk) & 0x8000) != 0;
+    // Controller Part
+    if (ControllerKey != 0)
+    {
+        if (!str.empty()) str += " / ";
+        
+        str += "Pad ";
+        bool first = true;
+        auto add = [&](const char* name) {
+            if (!first) str += "+";
+            str += name;
+            first = false;
+        };
+
+        const unsigned int k = ControllerKey;
+        if (k & PAD_L_TRIGGER) add("LT");
+        if (k & PAD_R_TRIGGER) add("RT");
+        if (k & XINPUT_GAMEPAD_DPAD_UP) add("D-Up");
+        if (k & XINPUT_GAMEPAD_DPAD_DOWN) add("D-Down");
+        if (k & XINPUT_GAMEPAD_DPAD_LEFT) add("D-Left");
+        if (k & XINPUT_GAMEPAD_DPAD_RIGHT) add("D-Right");
+        if (k & XINPUT_GAMEPAD_START) add("Start");
+        if (k & XINPUT_GAMEPAD_BACK) add("Back");
+        if (k & XINPUT_GAMEPAD_LEFT_THUMB) add("L3");
+        if (k & XINPUT_GAMEPAD_RIGHT_THUMB) add("R3");
+        if (k & XINPUT_GAMEPAD_GUIDE) add("Guide");
+        if (k & XINPUT_GAMEPAD_LEFT_SHOULDER) add("LB");
+        if (k & XINPUT_GAMEPAD_RIGHT_SHOULDER) add("RB");
+        if (k & XINPUT_GAMEPAD_A) add("A");
+        if (k & XINPUT_GAMEPAD_B) add("B");
+        if (k & XINPUT_GAMEPAD_X) add("X");
+        if (k & XINPUT_GAMEPAD_Y) add("Y");
+        
+        if (first) str += "Unknown";
+    }
+
+    if (str.empty()) return "None";
+    return str;
 }
 
 bool KeyBind::IsPressed(bool strict) const
 {
-    if (Key == 0) return false;
+    // Check Controller
+    if (ControllerKey != 0)
+    {
+        XINPUT_STATE state{};
+        // User index 0 is the primary controller
+        if (GetControllerState(0, &state))
+        {
+            unsigned int currentButtons = GetGamepadFlags(state);
+            
+            // Check if ALL required bits are set
+            if ((currentButtons & ControllerKey) == ControllerKey)
+                return true;
+        }
+    }
 
-    bool k = IsKeyDown(Key);
-    bool c = IsKeyDown(VK_CONTROL);
-    bool s = IsKeyDown(VK_SHIFT);
-    bool a = IsKeyDown(VK_MENU);
+    // Check Keyboard
+    if (KeyboardKey != 0)
+    {
+        // Short-circuit: only check modifiers if the main key is physically pressed
+        if (GetAsyncKeyState(KeyboardKey) & 0x8000)
+        {
+            const bool c = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+            const bool s = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+            const bool a = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
 
-    if (strict)
-        return k && (Ctrl == c) && (Shift == s) && (Alt == a);
-    else
-        return k && (!Ctrl || c) && (!Shift || s) && (!Alt || a);
+            if (strict)
+            {
+                if ((Ctrl == c) && (Shift == s) && (Alt == a))
+                    return true;
+            }
+            else
+            {
+                if ((!Ctrl || c) && (!Shift || s) && (!Alt || a))
+                    return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 bool KeyBind::IsPressedEvent(unsigned int msg, uintptr_t wParam, bool strict) const
 {
-    if (Key == 0) return false;
+    if (KeyboardKey == 0) return false;
 
     if (msg != WM_KEYDOWN && msg != WM_SYSKEYDOWN) return false;
-    if (wParam != Key) return false;
+    if (wParam != KeyboardKey) return false;
 
     bool c = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     bool s = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -81,4 +173,4 @@ bool KeyBind::IsPressedEvent(unsigned int msg, uintptr_t wParam, bool strict) co
         return (Ctrl == c) && (Shift == s) && (Alt == a);
     else
         return (!Ctrl || c) && (!Shift || s) && (!Alt || a);
-}
+}

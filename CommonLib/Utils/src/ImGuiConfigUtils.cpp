@@ -2,8 +2,10 @@
 #include "imgui_internal.h"
 #include "KeyBind.h"
 #include <Windows.h>
+#include <xinput.h>
 #include <vector>
 #include <cstring>
+#include <string>
 
 namespace ImGui {
 
@@ -12,70 +14,134 @@ namespace ImGui {
         bool changed = false;
         std::string labelStr = label;
         std::string idStr = "##" + labelStr;
-        
-        // Display current binding
-        std::string valueStr = keybind.ToString();
-        char buf[128];
-        strcpy_s(buf, valueStr.c_str());
+        ImGuiID id = ImGui::GetID(idStr.c_str());
 
-        // Read-only input box. Used to capture focus.
+        // Shared state for live preview during capture
+        static unsigned int s_accumulatedButtons = 0;
+        static bool s_capturingPad = false;
+        static ImGuiID s_currentActiveID = 0;
+
+        bool is_active = (ImGui::GetActiveID() == id);
+
+        // Reset state if we lost focus or switched widgets unexpectedly
+        if (s_currentActiveID == id && !is_active)
+        {
+            s_currentActiveID = 0;
+            s_accumulatedButtons = 0;
+            s_capturingPad = false;
+        }
+        else if (is_active && s_currentActiveID != id)
+        {
+            s_currentActiveID = id;
+            s_accumulatedButtons = 0;
+            s_capturingPad = false;
+        }
+
+        // Determine display string for preview
+        std::string valueStr;
+        if (is_active && s_capturingPad && s_accumulatedButtons != 0)
+        {
+            // Create a temp object with current real KB bind + accumulated Pad bind for visualization
+            KeyBind temp = keybind;
+            temp.ControllerKey = s_accumulatedButtons;
+            valueStr = temp.ToString();
+        }
+        else
+        {
+            valueStr = keybind.ToString();
+        }
+
+        char buf[128];
+        // Use standard copy to avoid MSVC specific warnings if compiling elsewhere, but keep simple
+        strncpy_s(buf, valueStr.c_str(), _TRUNCATE);
+
+        // Read-only input box. Used to capture focus and display text.
         ImGui::InputText(idStr.c_str(), buf, sizeof(buf), ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoUndoRedo);
         
         // Tooltip
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
         {
-            ImGui::SetTooltip("Click to set shortcut.\nPress Backspace to clear.");
+            ImGui::SetTooltip("Click to set shortcut.\nKeyboard: Press key to set.\nController: Hold buttons to set (supports combos).\nPress Backspace to clear all.");
         }
 
         // Capture Logic
         if (ImGui::IsItemActive())
         {
-            // We use GetAsyncKeyState loop to detect key press
-            // We scan range 0x08 (Backspace) to 0xFE
-            unsigned int pressedKey = 0;
-            
-            for (unsigned int k = 0x08; k <= 0xFE; ++k)
+            // 1. Controller Poll
+            XINPUT_STATE xState{};
+            if (KeyBind::GetControllerState(0, &xState))
             {
-                // Key must be pressed
-                if (GetAsyncKeyState(k) & 0x8000)
-                {
-                    // Filter modifiers (Ctrl, Shift, Alt, Win) from being the "Main" key 
-                    // unless we want to allow binding just "Ctrl". ReShade blocks them.
-                    // 0x10=Shift, 0x11=Ctrl, 0x12=Alt, 0x5B/5C=Win
-                    if (k == VK_SHIFT || k == VK_CONTROL || k == VK_MENU || k == VK_LWIN || k == VK_RWIN ||
-                        k == VK_LSHIFT || k == VK_RSHIFT || k == VK_LCONTROL || k == VK_RCONTROL || k == VK_LMENU || k == VK_RMENU)
-                        continue;
-                    
-                    // Mouse buttons (LButton=1, RButton=2...) 
-                    // We typically avoid binding LButton (0x01) directly via this loop 
-                    // because clicking the widget triggers it.
-                    if (k == VK_LBUTTON) continue;
+                unsigned int currentButtons = KeyBind::GetGamepadFlags(xState);
 
-                    pressedKey = k;
-                    break;
+                if (currentButtons != 0)
+                {
+                    s_capturingPad = true;
+                    s_accumulatedButtons |= currentButtons;
+                }
+                else if (s_capturingPad) // Buttons released
+                {
+                    // Apply accumulated buttons
+                    if (s_accumulatedButtons != 0)
+                    {
+                        keybind.ControllerKey = s_accumulatedButtons;
+                        changed = true;
+                        ImGui::ClearActiveID(); // Stop capturing
+                    }
+                    s_capturingPad = false;
+                    s_accumulatedButtons = 0;
                 }
             }
 
-            if (pressedKey != 0)
+            // 2. Keyboard Poll
+            // Only poll keyboard if we aren't currently holding controller buttons to avoid confusing conflicts
+            if (!changed && !s_capturingPad)
             {
-                if (pressedKey == VK_BACK)
-                {
-                    // Clear
-                    keybind = KeyBind();
-                    changed = true;
-                }
-                else
-                {
-                    // Set new bind
-                    keybind.Key = pressedKey;
-                    keybind.Ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                    keybind.Shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-                    keybind.Alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-                    changed = true;
-                }
+                // We use GetAsyncKeyState loop to detect key press
+                // We scan range 0x08 (Backspace) to 0xFE
+                unsigned int pressedKey = 0;
                 
-                // Remove focus to stop capturing
-                ImGui::ClearActiveID();
+                for (unsigned int k = 0x08; k <= 0xFE; ++k)
+                {
+                    // Key must be pressed
+                    if (GetAsyncKeyState(k) & 0x8000)
+                    {
+                        // Filter modifiers (Ctrl, Shift, Alt, Win) from being the "Main" key 
+                        if (k == VK_SHIFT || k == VK_CONTROL || k == VK_MENU || k == VK_LWIN || k == VK_RWIN ||
+                            k == VK_LSHIFT || k == VK_RSHIFT || k == VK_LCONTROL || k == VK_RCONTROL || k == VK_LMENU || k == VK_RMENU)
+                            continue;
+                        
+                        // Avoid capturing mouse clicks as keys
+                        if (k == VK_LBUTTON || k == VK_RBUTTON || k == VK_MBUTTON || k == VK_XBUTTON1 || k == VK_XBUTTON2) continue;
+
+                        pressedKey = k;
+                        break;
+                    }
+                }
+
+                if (pressedKey != 0)
+                {
+                    if (pressedKey == VK_BACK)
+                    {
+                        // Backspace: Clear ALL Binds
+                        keybind.KeyboardKey = 0;
+                        keybind.Ctrl = false;
+                        keybind.Shift = false;
+                        keybind.Alt = false;
+                        keybind.ControllerKey = 0;
+                        changed = true;
+                    }
+                    else
+                    {
+                        // Set new Keyboard bind
+                        keybind.KeyboardKey = pressedKey;
+                        keybind.Ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+                        keybind.Shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+                        keybind.Alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+                        changed = true;
+                    }
+                    
+                    ImGui::ClearActiveID();
+                }
             }
         }
         
@@ -84,4 +150,4 @@ namespace ImGui {
 
         return changed;
     }
-}
+}
