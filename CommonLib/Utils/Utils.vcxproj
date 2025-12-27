@@ -92,6 +92,8 @@
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\KeyBind.cpp" />
     <ClCompile Include="src\ImGuiConfigUtils.cpp" />
+    <ClCompile Include="src\CpuAffinity.cpp" />
+    <ClCompile Include="src\ImGuiConsole.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\crash_handler.h" />
@@ -99,6 +101,8 @@
     <ClInclude Include="include\ImGuiCTX.h" />
     <ClInclude Include="include\KeyBind.h" />
     <ClInclude Include="include\ImGuiConfigUtils.h" />
+    <ClInclude Include="include\CpuAffinity.h" />
+    <ClInclude Include="include\ImGuiConsole.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
