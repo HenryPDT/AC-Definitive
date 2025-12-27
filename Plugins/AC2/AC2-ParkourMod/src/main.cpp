@@ -29,9 +29,7 @@ public:
         }
         if (!g_imgui_context_set) return;
 
-        ImGui::Begin("AC2 Parkour Mod");
-        ImGui::Text("Hello from the AC2 Plugin!");
-        ImGui::End();
+        ImGui::Text("This is the menu for the AC2 plugin.");
     }
 
     void OnUpdate() override

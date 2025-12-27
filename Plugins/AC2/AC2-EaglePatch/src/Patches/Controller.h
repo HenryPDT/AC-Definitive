@@ -6,6 +6,7 @@
 namespace AC2EaglePatch
 {
     void InitController(uintptr_t baseAddr, GameVersion version, int keyboardLayout);
+    void UpdateKeyboardLayout(int keyboardLayout);
 
     // --- Game Structures (scimitar) ---
     namespace scimitar

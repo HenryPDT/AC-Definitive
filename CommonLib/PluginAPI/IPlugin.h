@@ -16,6 +16,8 @@ enum class Game
     AC2,
     ACB,
     ACR,
+    AC3,
+    AC4,
 };
 
 // Forward declaration
@@ -41,7 +43,8 @@ public:
     // Good place for one-time initializations like reading configs.
     virtual void OnPluginInit(const PluginLoaderInterface& loader_interface) = 0;
 
-    // Called every frame when the menu is open.
+    // Called every frame when the menu is open to render UI widgets.
+    // Do NOT create a window (ImGui::Begin/End) here; the loader handles containers.
     virtual void OnGuiRender() {}
 
     // Called every frame, regardless of menu state.

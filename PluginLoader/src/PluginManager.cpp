@@ -3,11 +3,14 @@
 #include "imgui.h"
 #include <filesystem>
 #include <algorithm>
+#include "imgui_internal.h"
+#include "GameDetection.h"
 
 void PluginManager::Init(HMODULE loaderModule, PluginLoaderInterface& loaderInterface)
 {
     m_loaderModule = loaderModule;
-    DetectGame();
+    m_currentGame = BaseHook::Util::GetCurrentGame();
+    LOG_INFO("Detected game: %d", (int)m_currentGame);
     LoadPlugins(loaderInterface);
 }
 
@@ -28,35 +31,111 @@ void PluginManager::RenderPluginMenus()
 {
     for (auto& plugin : m_plugins)
     {
-        plugin.instance->OnGuiRender();
+        if (plugin.showWindow)
+        {
+            // Set default size/pos for new windows
+            ImGui::SetNextWindowPos(ImVec2(100, 100), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(500, 500), ImGuiCond_FirstUseEver);
+
+            // Render in a separate window
+            if (ImGui::Begin(plugin.name.c_str(), &plugin.showWindow, ImGuiWindowFlags_NoFocusOnAppearing))
+            {
+                plugin.instance->OnGuiRender();
+            }
+            ImGui::End();
+        }
     }
 }
 
 void PluginManager::DrawPluginMenu()
 {
-    if (ImGui::CollapsingHeader("Loaded Plugins"))
+    // Use a child region for the list to keep it tidy if list is long
+    if (ImGui::BeginChild("PluginList", ImVec2(0, 0), false, ImGuiWindowFlags_None))
     {
-        for (const auto& plugin : m_plugins)
+        for (auto& plugin : m_plugins)
         {
-            ImGui::BulletText("%s (v%d.%d)", plugin.name.c_str(), plugin.instance->GetPluginVersion() >> 16, plugin.instance->GetPluginVersion() & 0xFFFF);
+            ImGui::PushID(plugin.name.c_str());
+
+            const bool poppedOut = plugin.showWindow;
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Framed |
+                                       ImGuiTreeNodeFlags_AllowOverlap |
+                                       ImGuiTreeNodeFlags_FramePadding |
+                                       ImGuiTreeNodeFlags_SpanAvailWidth;
+
+            if (poppedOut)
+            {
+                // If popped out, treat as leaf to prevent inline expansion
+                flags |= ImGuiTreeNodeFlags_Leaf;
+                // Optional: distinct color for popped out items
+                ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetStyle().Colors[ImGuiCol_Header]);
+            }
+
+            // Draw Header
+            bool isNodeOpen = ImGui::TreeNodeEx(plugin.name.c_str(), flags, "%s (v%d.%d)",
+                plugin.name.c_str(),
+                plugin.instance->GetPluginVersion() >> 16,
+                plugin.instance->GetPluginVersion() & 0xFFFF);
+
+            if (poppedOut)
+            {
+                ImGui::PopStyleColor();
+                // Feature: Clicking the header of a popped-out plugin focuses its window
+                if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+                {
+                    ImGui::SetWindowFocus(plugin.name.c_str());
+                }
+            }
+
+            // Draw Toggle Button aligned to right
+            const char* btnLabel = poppedOut ? "Attach" : "Detach";
+            ImGuiStyle& style = ImGui::GetStyle();
+            
+            float btnWidth = ImGui::CalcTextSize(btnLabel).x + style.FramePadding.x * 2.0f;
+            float availWidth = ImGui::GetContentRegionAvail().x;
+            float btnX = ImGui::GetCursorPosX() + availWidth - btnWidth - style.ItemSpacing.x;
+
+            // Ensure button doesn't overlap text if window is very narrow
+            if (btnX < ImGui::GetCursorPosX() + 100.0f) btnX = ImGui::GetCursorPosX() + 100.0f;
+
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(btnX);
+            
+            // Use a distinct color for the "Attach" state to make it obvious
+            if (poppedOut) ImGui::PushStyleColor(ImGuiCol_Button, style.Colors[ImGuiCol_ButtonActive]);
+
+            if (ImGui::SmallButton(btnLabel))
+            {
+                plugin.showWindow = !plugin.showWindow;
+            }
+
+            if (poppedOut) ImGui::PopStyleColor();
+
+            // Tooltip
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip(poppedOut ? "Attach this plugin back into the list" : "Detach this plugin into a separate window");
+            }
+
+            if (isNodeOpen)
+            {
+                if (!poppedOut)
+                {
+                    // Inline render
+                    // Auto-resize height and border for the embedded child
+                    if (ImGui::BeginChild("embedded", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY))
+                    {
+                        ImGui::Dummy(ImVec2(0, 2.0f));
+                        plugin.instance->OnGuiRender();
+                        ImGui::Dummy(ImVec2(0, 2.0f));
+                    }
+                    ImGui::EndChild();
+                }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
         }
     }
-}
-
-void PluginManager::DetectGame()
-{
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    std::filesystem::path gamePath(exePath);
-    std::string exeName = gamePath.filename().string();
-
-    if (_stricmp(exeName.c_str(), "AssassinsCreed_Dx9.exe") == 0) m_currentGame = Game::AC1;
-    else if (_stricmp(exeName.c_str(), "AssassinsCreed_Dx10.exe") == 0) m_currentGame = Game::AC1;
-    else if (_stricmp(exeName.c_str(), "AssassinsCreedIIGame.exe") == 0) m_currentGame = Game::AC2;
-    else if (_stricmp(exeName.c_str(), "ACBSP.exe") == 0) m_currentGame = Game::ACB;
-    else if (_stricmp(exeName.c_str(), "ACRSP.exe") == 0) m_currentGame = Game::ACR;
-
-    LOG_INFO("Detected game: %d", (int)m_currentGame);
+    ImGui::EndChild();
 }
 
 void* PluginManager::GetPluginInterface(const std::string& name)

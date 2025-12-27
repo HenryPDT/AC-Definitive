@@ -12,6 +12,7 @@
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
 AC2EaglePatch::Configuration g_config;
+std::filesystem::path g_configPath;
 static bool g_imgui_context_set = false;
 
 class AC2EaglePatchPlugin : public IPlugin
@@ -29,7 +30,7 @@ public:
         auto version = AC2EaglePatch::DetectVersion(baseAddr);
 
         // --- Load Configuration ---
-        PluginConfig::Load(g_config, (const void*)PluginEntry);
+        g_configPath = PluginConfig::Load(g_config, (const void*)PluginEntry);
 
         if (version != AC2EaglePatch::GameVersion::Unknown)
         {
@@ -56,6 +57,32 @@ public:
             ImGui::SetCurrentContext(g_loader_ref->m_ImGuiContext);
             g_imgui_context_set = true;
         }
+        if (!g_imgui_context_set) return;
+
+        ImGui::Checkbox("Enable Controller Support (XInput)", &g_config.EnableXInput.get());
+        ImGui::Checkbox("Skip Intro Videos", &g_config.SkipIntroVideos.get());
+        ImGui::Checkbox("Unlock UPlay Bonuses", &g_config.UPlayItems.get());
+        ImGui::Checkbox("Improve Draw Distance", &g_config.ImproveDrawDistance.get());
+        ImGui::Checkbox("Improve Shadow Map Resolution", &g_config.ImproveShadowMapResolution.get());
+
+        const char* layouts[] = { "Keyboard/Mouse 1", "Keyboard/Mouse 2", "Keyboard/Mouse 3", "Keyboard/Mouse 4" };
+        int currentLayout = g_config.KeyboardLayout;
+        if (currentLayout < 0 || currentLayout > 3) currentLayout = 0;
+        if (ImGui::Combo("Keyboard Layout", &currentLayout, layouts, IM_ARRAYSIZE(layouts)))
+        {
+            g_config.KeyboardLayout = currentLayout;
+            AC2EaglePatch::UpdateKeyboardLayout(currentLayout);
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Save Settings"))
+        {
+            Serialization::JSON outJson;
+            g_config.SectionToJSON(outJson);
+            if (Serialization::Utils::SaveJSONToFile(outJson, g_configPath) && g_loader_ref)
+                g_loader_ref->LogToConsole("[AC2 EaglePatch] Config saved.");
+        }
+        ImGui::TextDisabled("Note: Most settings require a restart.");
     }
 };
 

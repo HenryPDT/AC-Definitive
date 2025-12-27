@@ -317,4 +317,9 @@ namespace AC1EaglePatch
         
         if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Controller patches applied.");
     }
+
+    void UpdateKeyboardLayout(int keyboardLayout)
+    {
+        NEEDED_KEYBOARD_SET = keyboardLayout;
+    }
 }
