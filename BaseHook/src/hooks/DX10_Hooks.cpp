@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "base.h"
-#include "DXGI_Common.h"
+#include "WindowedMode.h"
+#include "hooks/hooks.h"
+#include "hooks/DXGI_Common.h"
 
 namespace BaseHook
 {

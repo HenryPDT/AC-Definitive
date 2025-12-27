@@ -1,12 +1,13 @@
 #include "pch.h"
 
-#include "D3DCreateHooks.h"
-#include "DXGI_Common.h"
+#include "hooks/D3DCreateHooks.h"
+#include "hooks/DXGI_Common.h"
 
 #include "base.h"
 #include "WindowedMode.h"
 #include "log.h"
-#include "../util/ComPtr.h"
+#include "ComPtr.h"
+#include <d3d9.h>
 
 namespace BaseHook
 {

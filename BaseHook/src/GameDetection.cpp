@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "GameDetection.h"
+#include "RenderDetection.h"
 #include <filesystem>
 #include <algorithm>
 #include <string>
@@ -41,6 +42,24 @@ namespace BaseHook
             if (EqualsIgnoreCase(exeName, "AC4BFSP.exe")) return kiero::RenderType::D3D11;
             
             return kiero::RenderType::None;
+        }
+
+        Game GetCurrentGame()
+        {
+            char modulePath[MAX_PATH];
+            if (GetModuleFileNameA(NULL, modulePath, MAX_PATH) == 0) return Game::Unknown;
+
+            std::filesystem::path path(modulePath);
+            std::string exeName = path.filename().string();
+
+            if (EqualsIgnoreCase(exeName, "AssassinsCreed_Dx9.exe") || EqualsIgnoreCase(exeName, "AssassinsCreed_Dx10.exe")) return Game::AC1;
+            if (EqualsIgnoreCase(exeName, "AssassinsCreedIIGame.exe")) return Game::AC2;
+            if (EqualsIgnoreCase(exeName, "ACBSP.exe")) return Game::ACB;
+            if (EqualsIgnoreCase(exeName, "ACRSP.exe")) return Game::ACR;
+            if (EqualsIgnoreCase(exeName, "AC3SP.exe")) return Game::AC3;
+            if (EqualsIgnoreCase(exeName, "AC4BFSP.exe")) return Game::AC4;
+
+            return Game::Unknown;
         }
     }
 }

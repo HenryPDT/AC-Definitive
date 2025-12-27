@@ -1,8 +1,9 @@
 #include "pch.h"
 #include "base.h"
 #include "WindowedMode.h"
-#include "D3DCreateHooks.h"
+#include "hooks/D3DCreateHooks.h"
 #include "GameDetection.h"
+#include "RenderDetection.h"
 
 namespace BaseHook
 {

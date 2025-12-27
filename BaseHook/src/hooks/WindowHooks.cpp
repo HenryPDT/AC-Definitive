@@ -1,7 +1,8 @@
 #include "pch.h"
 #include "base.h"
 #include "WindowedMode.h"
-#include "D3DCreateHooks.h"
+#include "hooks/hooks.h"
+#include "hooks/D3DCreateHooks.h"
 #include <vector>
 #include <string>
 

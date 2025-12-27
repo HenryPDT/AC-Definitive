@@ -1,10 +1,10 @@
 #include "pch.h"
-#include "DXGI_Common.h"
+#include "hooks/DXGI_Common.h"
 
 #include "WindowedMode.h"
 #include "log.h"
 #include "FramerateLimiter.h"
-#include "../util/ComPtr.h"
+#include "ComPtr.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"

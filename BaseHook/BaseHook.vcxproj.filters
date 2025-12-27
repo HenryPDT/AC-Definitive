@@ -47,10 +47,22 @@
     <ClInclude Include="deps\kiero\minhook\include\MinHook.h">
       <Filter>deps\kiero\minhook\include</Filter>
     </ClInclude>
-    <ClInclude Include="src\hooks\D3DCreateHooks.h">
+    <ClInclude Include="include\hooks\D3DCreateHooks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\util\GameDetection.h">
+    <ClInclude Include="include\GameDetection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\RenderDetection.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\hooks\DXGI_Common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\hooks\hooks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ComPtr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\FramerateLimiter.h">
@@ -112,7 +124,7 @@
     <ClCompile Include="src\hooks\D3DCreateHooks.cpp">
       <Filter>Source Files\hooks</Filter>
     </ClCompile>
-    <ClCompile Include="src\util\GameDetection.cpp">
+    <ClCompile Include="src\GameDetection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\FramerateLimiter.cpp">
