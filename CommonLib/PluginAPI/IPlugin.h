@@ -16,6 +16,8 @@ enum class Game
     AC2,
     ACB,
     ACR,
+    AC3,
+    AC4,
 };
 
 // Forward declaration
@@ -41,11 +43,15 @@ public:
     // Good place for one-time initializations like reading configs.
     virtual void OnPluginInit(const PluginLoaderInterface& loader_interface) = 0;
 
-    // Called every frame when the menu is open.
+    // Called every frame when the menu is open to render UI widgets.
+    // Do NOT create a window (ImGui::Begin/End) here; the loader handles containers.
     virtual void OnGuiRender() {}
 
     // Called every frame, regardless of menu state.
     virtual void OnUpdate() {}
+
+    // Optional: Expose a pointer to an interface/controller for other plugins to use.
+    virtual void* GetInterface() { return nullptr; }
 };
 
 // The interface the loader provides to plugins.
@@ -59,6 +65,7 @@ public:
     void (*LogToFile)(const char* fmt, ...) = nullptr;
     ImGuiContext* m_ImGuiContext = nullptr;
     ImGuiContext* (*GetImGuiContext)() = nullptr;
+    void* (*GetPluginInterface)(const char* pluginName) = nullptr;
 };
 
 // Each plugin must export this function. It should return a new instance of your plugin's main class.
