@@ -129,7 +129,6 @@ namespace BaseHook::Hooks::DXGICommon
         if (hookedAny)
         {
             s_hookedSwapChain = pSwapChain;
-            LOG_INFO("DXGI: Installed swapchain hooks (SetFullscreenState/GetFullscreenState/GetDesc).");
         }
     }
 
@@ -152,7 +151,6 @@ namespace BaseHook::Hooks::DXGICommon
         HRESULT hr = pSwapChain->GetParent(IID_PPV_ARGS(factory.ReleaseAndGetAddressOf()));
         if (FAILED(hr) || !factory)
         {
-            LOG_WARN("DXGI: Failed to get factory parent for MakeWindowAssociation (hr=0x%08X).", (unsigned)hr);
             return;
         }
 
@@ -160,14 +158,7 @@ namespace BaseHook::Hooks::DXGICommon
             return;
 
         // Disable DXGI runtime Alt+Enter fullscreen toggling.
-        hr = factory->MakeWindowAssociation(Data::hWindow, DXGI_MWA_NO_ALT_ENTER);
-        if (FAILED(hr))
-        {
-            LOG_WARN("DXGI: MakeWindowAssociation(DXGI_MWA_NO_ALT_ENTER) failed (hr=0x%08X).", (unsigned)hr);
-            return;
-        }
-
-        LOG_INFO("DXGI: Alt+Enter disabled via MakeWindowAssociation(DXGI_MWA_NO_ALT_ENTER).");
+        factory->MakeWindowAssociation(Data::hWindow, DXGI_MWA_NO_ALT_ENTER);
     }
 
     static void CreateRenderTarget10(IDXGISwapChain* pSwapChain)
@@ -385,7 +376,6 @@ namespace BaseHook::Hooks::DXGICommon
             {
                  Width = WindowedMode::g_State.virtualWidth;
                  Height = WindowedMode::g_State.virtualHeight;
-                 LOG_INFO("DXGI ResizeBuffers: Auto-size blocked by ScaleContent. Enforcing %dx%d", Width, Height);
             }
 
             if (WindowedMode::g_State.overrideWidth > 0 && WindowedMode::g_State.overrideHeight > 0)
@@ -394,7 +384,7 @@ namespace BaseHook::Hooks::DXGICommon
                 Height = WindowedMode::g_State.overrideHeight;
             }
 
-            LOG_INFO("DXGI ResizeBuffers: %dx%d", Width, Height);
+            LOG_INFO("DXGI: ResizeBuffers to %dx%d", Width, Height);
             if (Width > 0 && Height > 0)
                 WindowedMode::NotifyResolutionChange(Width, Height);
             if (WindowedMode::ShouldHandle())
@@ -457,7 +447,7 @@ namespace BaseHook::Hooks::DXGICommon
         {
              if (pNewTargetParameters)
              {
-                 LOG_INFO("DXGI ResizeTarget: %dx%d", pNewTargetParameters->Width, pNewTargetParameters->Height);
+                 LOG_INFO("DXGI: ResizeTarget to %dx%d", pNewTargetParameters->Width, pNewTargetParameters->Height);
                  // If the game is requesting a specific target size, we treat it as a resolution change request
                  if (pNewTargetParameters->Width > 0 && pNewTargetParameters->Height > 0)
                      WindowedMode::NotifyResolutionChange(pNewTargetParameters->Width, pNewTargetParameters->Height);

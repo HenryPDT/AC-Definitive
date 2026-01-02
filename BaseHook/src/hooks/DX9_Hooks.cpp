@@ -95,7 +95,6 @@ namespace BaseHook
             // LOG_INFO("hkEndScene: Called"); // Very spammy, use with caution or counter
             static int logCount = 0;
             if (logCount < 5) {
-                LOG_INFO("hkEndScene: Called (First 5 logs)");
                 logCount++;
             }
 
@@ -108,11 +107,10 @@ namespace BaseHook
 
             if (!Data::bIsInitialized)
             {
-                LOG_INFO("hkEndScene: Initializing ImGui...");
+                LOG_INFO("hkEndScene: Initializing ImGui.");
                 Data::pDevice = pDevice;
                 InitImGui(pDevice);
                 Data::bIsInitialized = true;
-                LOG_INFO("hkEndScene: ImGui Initialized.");
             }
 
             Data::bIsRendering = true;
@@ -152,13 +150,6 @@ namespace BaseHook
 
         HRESULT __stdcall hkReset(LPDIRECT3DDEVICE9 pDevice, D3DPRESENT_PARAMETERS* pPresentationParameters)
         {
-            LOG_INFO("hkReset: Called. pDevice=%p", pDevice);
-            if (pPresentationParameters) {
-                LOG_INFO("  Params: BackBuffer=%dx%d, Windowed=%d, hDeviceWindow=%p",
-                    pPresentationParameters->BackBufferWidth, pPresentationParameters->BackBufferHeight,
-                    pPresentationParameters->Windowed, pPresentationParameters->hDeviceWindow);
-            }
-
             WindowedMode::CheckAndApplyPendingState();
 
             // CRITICAL: Make a local copy. Do NOT modify the game's pointer directly.
@@ -180,7 +171,7 @@ namespace BaseHook
                     params.BackBufferHeight = WindowedMode::g_State.overrideHeight;
                 }
 
-                LOG_INFO("D3D9 Reset: Windowed=%d, Size=%dx%d", pPresentationParameters->Windowed, params.BackBufferWidth, params.BackBufferHeight);
+                LOG_INFO("hkReset: Windowed=%d, Size=%dx%d", pPresentationParameters->Windowed, params.BackBufferWidth, params.BackBufferHeight);
 
                 if (params.BackBufferWidth > 0 && params.BackBufferHeight > 0) {
                     WindowedMode::NotifyResolutionChange(params.BackBufferWidth, params.BackBufferHeight);
@@ -204,7 +195,6 @@ namespace BaseHook
                 ImGui_ImplDX9_InvalidateDeviceObjects();
                 
             HRESULT hr = Data::oReset(pDevice, pParamsToUse);
-            LOG_INFO("hkReset: Result=%08X", hr);
             
             if (SUCCEEDED(hr))
             {
@@ -218,7 +208,6 @@ namespace BaseHook
                 if (SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, pBackBuffer.GetAddressOf()))) {
                     D3DSURFACE_DESC desc;
                     pBackBuffer->GetDesc(&desc);
-                    LOG_INFO("  Reset BackBuffer Size: %dx%d", desc.Width, desc.Height);
                     WindowedMode::NotifyResolutionChange(desc.Width, desc.Height);
                 }
             }
@@ -244,13 +233,6 @@ namespace BaseHook
 
         HRESULT __stdcall hkResetEx(IDirect3DDevice9Ex* pDevice, D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode)
         {
-            LOG_INFO("hkResetEx: Called. pDevice=%p", pDevice);
-            if (pPresentationParameters) {
-                LOG_INFO("  Params: BackBuffer=%dx%d, Windowed=%d, hDeviceWindow=%p",
-                    pPresentationParameters->BackBufferWidth, pPresentationParameters->BackBufferHeight,
-                    pPresentationParameters->Windowed, pPresentationParameters->hDeviceWindow);
-            }
-
             WindowedMode::CheckAndApplyPendingState();
 
             D3DPRESENT_PARAMETERS params = *pPresentationParameters;
@@ -271,7 +253,7 @@ namespace BaseHook
                     params.BackBufferHeight = WindowedMode::g_State.overrideHeight;
                 }
 
-                LOG_INFO("D3D9Ex ResetEx: Windowed=%d, Size=%dx%d", pPresentationParameters->Windowed, params.BackBufferWidth, params.BackBufferHeight);
+                LOG_INFO("hkResetEx: Windowed=%d, Size=%dx%d", pPresentationParameters->Windowed, params.BackBufferWidth, params.BackBufferHeight);
 
                 if (params.BackBufferWidth > 0 && params.BackBufferHeight > 0) {
                     WindowedMode::NotifyResolutionChange(params.BackBufferWidth, params.BackBufferHeight);
@@ -295,7 +277,6 @@ namespace BaseHook
                 ImGui_ImplDX9_InvalidateDeviceObjects();
 
             HRESULT hr = Data::oResetEx(pDevice, pParamsToUse, pFullscreenModeToUse);
-            LOG_INFO("hkResetEx: Result=%08X", hr);
 
             if (SUCCEEDED(hr))
             {
@@ -309,7 +290,6 @@ namespace BaseHook
                 if (SUCCEEDED(pDevice->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, pBackBuffer.GetAddressOf()))) {
                     D3DSURFACE_DESC desc;
                     pBackBuffer->GetDesc(&desc);
-                    LOG_INFO("  ResetEx BackBuffer Size: %dx%d", desc.Width, desc.Height);
                     WindowedMode::NotifyResolutionChange(desc.Width, desc.Height);
                 }
             }

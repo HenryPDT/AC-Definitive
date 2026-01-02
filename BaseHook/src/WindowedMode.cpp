@@ -405,7 +405,6 @@ namespace BaseHook
         void SetManagedWindow(HWND hWnd)
         {
             if (g_State.hWnd != hWnd) {
-                LOG_INFO("SetManagedWindow: Updating managed window %p -> %p", g_State.hWnd, hWnd);
                 g_State.hWnd = hWnd;
             }
         }
@@ -419,7 +418,7 @@ namespace BaseHook
             // We do this cheaply by checking if we haven't done it recently.
             static bool s_DisplaySettingsReset = false;
             if (!s_DisplaySettingsReset) {
-                LOG_INFO("WindowedMode::Apply: Resetting Display Settings to Desktop Default.");
+                LOG_INFO("WindowedMode::Apply: Resetting display to desktop default.");
                 ChangeDisplaySettingsA(NULL, 0);
                 s_DisplaySettingsReset = true;
             }
@@ -526,13 +525,7 @@ namespace BaseHook
             if (!styleChanged && !posChanged)
                 return;
             
-            LOG_INFO("WindowedMode::Apply: Changes Detected. StyleChanged=%d, PosChanged=%d", styleChanged, posChanged);
-            if (styleChanged) {
-                LOG_INFO("  Style: %08X -> %08X, ExStyle: %08X -> %08X", currentStyle, targetStyle, currentExStyle, targetExStyle);
-            }
-            if (posChanged) {
-                LOG_INFO("  Pos: (%d,%d %dx%d) -> (%d,%d %dx%d)", compareRect.left, compareRect.top, compareRect.right-compareRect.left, compareRect.bottom-compareRect.top, x, y, w, h);
-            }
+            LOG_INFO("WindowedMode::Apply: Applying changes (Style=%d, Pos=%d) to HWND %p", styleChanged, posChanged, hWnd);
 
             g_State.inInternalChange = true;
 
@@ -636,13 +629,12 @@ namespace BaseHook
         {
             if (Data::pSwapChain)
             {
-                LOG_INFO("ForceUpdateDXGI: Applying DXGI State...");
                 CheckAndApplyPendingState();
 
                 // If currently handling (Windowed/Borderless), enforce Windowed state on SwapChain
                 if (ShouldHandle())
                 {
-                    LOG_INFO("ForceUpdateDXGI: Setting SwapChain to Windowed (FALSE).");
+                    LOG_INFO("ForceUpdateDXGI: Setting swap chain to windowed.");
                     Data::pSwapChain->SetFullscreenState(FALSE, NULL);
                     
                     // If we have an override resolution, explicitly request a ResizeTarget.
@@ -665,7 +657,7 @@ namespace BaseHook
                 else
                 {
                     // If switching to Exclusive Fullscreen
-                     LOG_INFO("ForceUpdateDXGI: Setting SwapChain to Fullscreen (TRUE).");
+                     LOG_INFO("ForceUpdateDXGI: Setting swap chain to exclusive fullscreen.");
                      Data::pSwapChain->SetFullscreenState(TRUE, NULL);
 
                      // Request immediate restoration in TickDXGIState
@@ -696,12 +688,12 @@ namespace BaseHook
         void TriggerFakeReset()
         {
             if (g_State.targetDXVersion == 9 || (g_State.targetDXVersion == 0 && !Data::pSwapChain)) {
-                LOG_INFO("Triggering Fake Device Reset via D3D9...");
+                LOG_INFO("Triggering D3D9 fake device reset.");
                 Data::g_fakeResetState = BaseHook::FakeResetState::Initiate;
                 RequestRestoreExclusiveFullscreen();
             }
             else {
-                LOG_INFO("Triggering DXGI State Update...");
+                LOG_INFO("Triggering DXGI state update.");
                 ForceUpdateDXGI();
             }
         }
@@ -719,7 +711,7 @@ namespace BaseHook
                 // Transitioning FROM Exclusive Fullscreen TO Windowed
                 if (!wasHandling && isHandling)
                 {
-                    LOG_INFO("WindowedMode: Transitioning to Windowed. Restoring Desktop Resolution.");
+                    LOG_INFO("WindowedMode: Transitioning to windowed. Restoring desktop resolution.");
                     g_State.inInternalChange = true;
                     ChangeDisplaySettings(NULL, 0);
                     g_State.inInternalChange = false;
@@ -729,18 +721,15 @@ namespace BaseHook
                 // We must strictly restore window styles so D3D Reset works correctly.
                 if (wasHandling && !isHandling && g_State.hWnd && IsWindow(g_State.hWnd))
                 {
-                    LOG_INFO("WindowedMode: Reverting to Exclusive Fullscreen defaults.");
+                    LOG_INFO("WindowedMode: Reverting to exclusive fullscreen defaults.");
                     g_State.inInternalChange = true;
 
                     DWORD dwStyle = GetWindowLong(g_State.hWnd, GWL_STYLE);
                     DWORD dwExStyle = GetWindowLong(g_State.hWnd, GWL_EXSTYLE);
-                    LOG_INFO("  Current Style: %08X, ExStyle: %08X", dwStyle, dwExStyle);
 
                     // Restore standard styles, remove popup/topmost
                     SetWindowLong(g_State.hWnd, GWL_STYLE, (dwStyle & ~WS_POPUP) | WS_OVERLAPPEDWINDOW);
                     SetWindowLong(g_State.hWnd, GWL_EXSTYLE, dwExStyle & ~WS_EX_TOPMOST);
-                    
-                    LOG_INFO("  Restored Style: %08X, ExStyle: %08X", GetWindowLong(g_State.hWnd, GWL_STYLE), GetWindowLong(g_State.hWnd, GWL_EXSTYLE));
 
                     // Apply without moving/sizing (Game will handle sizing next)
                     SetWindowPos(g_State.hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, 

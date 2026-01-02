@@ -279,16 +279,15 @@ namespace BaseHook
         HWND WINAPI hkCreateWindowExA(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
         {
             if (!IsIgnoredWindowClass(lpClassName, lpWindowName, nWidth, nHeight)) {
-                LOG_INFO("hkCreateWindowExA: Class=%s, Name=%s, Style=%08X, ExStyle=%08X, X=%d, Y=%d, W=%d, H=%d, Parent=%p",
+                LOG_INFO("hkCreateWindowExA: Class=%s, Name=%s, Style=%08X, Size=%dx%d",
                     (IS_INTRESOURCE(lpClassName) ? "INT" : lpClassName),
                     (IS_INTRESOURCE(lpWindowName) ? "INT" : lpWindowName),
-                    dwStyle, dwExStyle, X, Y, nWidth, nHeight, hWndParent);
+                    dwStyle, nWidth, nHeight);
             }
 
             bool bIgnored = IsIgnoredWindowClass(lpClassName, lpWindowName, nWidth, nHeight);
             if (WindowedMode::ShouldHandle() && !hWndParent && !bIgnored) {
                 ApplyWindowCreationOverrides(lpClassName, lpWindowName, dwStyle, dwExStyle, X, Y, nWidth, nHeight);
-                LOG_INFO("  Overrides Applied: Style=%08X, ExStyle=%08X, X=%d, Y=%d, W=%d, H=%d", dwStyle, dwExStyle, X, Y, nWidth, nHeight);
             }
 
             HWND hWnd = oCreateWindowExA(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
@@ -311,7 +310,7 @@ namespace BaseHook
                     g_MaxArea = area;
                     g_WindowFound = true;
                     InstallWndProcHook();
-                    LOG_INFO("  Window Found & Hooked: %p", hWnd);
+                    LOG_INFO("hkCreateWindowExA: Window hooked: %p", hWnd);
                 }
             }
             return hWnd;
@@ -319,11 +318,6 @@ namespace BaseHook
 
         HWND WINAPI hkCreateWindowExW(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
         {
-            if (!IsIgnoredWindowClass(lpClassName, lpWindowName, nWidth, nHeight)) {
-                 // Convert for logging (lazy)
-                 // LOG_INFO("hkCreateWindowExW: Called");
-            }
-
             bool bIgnored = IsIgnoredWindowClass(lpClassName, lpWindowName, nWidth, nHeight);
             if (WindowedMode::ShouldHandle() && !hWndParent && !bIgnored) {
                 ApplyWindowCreationOverrides(lpClassName, lpWindowName, dwStyle, dwExStyle, X, Y, nWidth, nHeight);
@@ -349,7 +343,7 @@ namespace BaseHook
                     g_MaxArea = area;
                     g_WindowFound = true;
                     InstallWndProcHook();
-                    LOG_INFO("hkCreateWindowExW: Window Found & Hooked: %p", hWnd);
+                    LOG_INFO("hkCreateWindowExW: Window hooked: %p", hWnd);
                 }
             }
             return hWnd;
@@ -358,8 +352,6 @@ namespace BaseHook
         BOOL WINAPI hkSetWindowPos(HWND hWnd, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags)
         {
             if (WindowedMode::ShouldHandle() && hWnd == Data::hWindow && !WindowedMode::g_State.inInternalChange) {
-                LOG_INFO("hkSetWindowPos: Called for Game Window. X=%d, Y=%d, CX=%d, CY=%d, Flags=%08X, InsertAfter=%p", X, Y, cx, cy, uFlags, hWndInsertAfter);
-
                 if (WindowedMode::g_State.alwaysOnTop) {
                     hWndInsertAfter = HWND_TOPMOST;
                 }
@@ -380,7 +372,6 @@ namespace BaseHook
                     if (!(uFlags & SWP_NOSIZE)) {
                         cx = WindowedMode::g_State.windowWidth;
                         cy = WindowedMode::g_State.windowHeight;
-                        LOG_INFO("  Enforcing Size: %dx%d", cx, cy);
                     }
                 }
 
@@ -419,7 +410,6 @@ namespace BaseHook
 
                     X = desiredX;
                     Y = desiredY;
-                    LOG_INFO("  Enforcing Pos: %d,%d", X, Y);
                 }
             }
             return oSetWindowPos(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);

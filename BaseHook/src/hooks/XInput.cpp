@@ -48,8 +48,6 @@ DWORD WINAPI hkXInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState)
 namespace BaseHook { namespace Hooks {
     void InitXInput()
     {
-        LOG_INFO("XInput: Initializing hooks...");
-
         // Try to find loaded XInput module first
         const char* names[] = { "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll" };
         HMODULE hXInput = nullptr;
@@ -57,7 +55,6 @@ namespace BaseHook { namespace Hooks {
         for (const char* name : names) {
             hXInput = GetModuleHandleA(name);
             if (hXInput) {
-                LOG_INFO("XInput: Found loaded %s", name);
                 break;
             }
         }
@@ -65,7 +62,6 @@ namespace BaseHook { namespace Hooks {
         // If not loaded, try to load 1.3 (common for older games like AC)
         if (!hXInput) {
             hXInput = LoadLibraryA("xinput1_3.dll");
-            if (hXInput) LOG_INFO("XInput: Loaded xinput1_3.dll");
         }
 
         if (hXInput)
@@ -74,7 +70,7 @@ namespace BaseHook { namespace Hooks {
             if (pProc) {
                 if (MH_CreateHook(pProc, hkXInputGetState, (void**)&oXInputGetState) == MH_OK &&
                     MH_EnableHook(pProc) == MH_OK) {
-                    LOG_INFO("XInput: Hooked XInputGetState at %p", pProc);
+                    LOG_INFO("XInput: Hooked XInputGetState.");
                 } else {
                     LOG_ERROR("XInput: Failed to hook XInputGetState.");
                 }

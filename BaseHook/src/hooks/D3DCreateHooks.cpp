@@ -344,17 +344,6 @@ namespace BaseHook
 
         static HRESULT STDMETHODCALLTYPE hkIDirect3D9_CreateDevice(IDirect3D9* pD3D, UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, IDirect3DDevice9** ppReturnedDeviceInterface)
         {
-            LOG_INFO("hkIDirect3D9_CreateDevice: Adapter=%u, DeviceType=%d, hFocus=%p, Flags=%08X", Adapter, DeviceType, hFocusWindow, BehaviorFlags);
-            if (pPresentationParameters) {
-                LOG_INFO("  Params: BackBuffer=%dx%d, Format=%d, Count=%d, SwapEffect=%d, Windowed=%d, hDeviceWindow=%p",
-                    pPresentationParameters->BackBufferWidth, pPresentationParameters->BackBufferHeight,
-                    pPresentationParameters->BackBufferFormat, pPresentationParameters->BackBufferCount,
-                    pPresentationParameters->SwapEffect, pPresentationParameters->Windowed,
-                    pPresentationParameters->hDeviceWindow);
-            } else {
-                LOG_INFO("  Params: NULL");
-            }
-
             WindowedMode::CheckAndApplyPendingState();
 
             D3DPRESENT_PARAMETERS params;
@@ -373,12 +362,12 @@ namespace BaseHook
                 }
 
                 if (WindowedMode::ShouldHandle()) {
-                    LOG_INFO("D3D9 CreateDevice Spoof: Forced Windowed");
+                    LOG_INFO("hkIDirect3D9_CreateDevice: Forced windowed.");
                     params.Windowed = TRUE;
                     params.FullScreen_RefreshRateInHz = 0;
                 }
                 else if (WindowedMode::g_State.activeMode == WindowedMode::Mode::ExclusiveFullscreen) {
-                    LOG_INFO("D3D9 CreateDevice Spoof: Forced Exclusive Fullscreen");
+                    LOG_INFO("hkIDirect3D9_CreateDevice: Forced exclusive fullscreen.");
                     params.Windowed = FALSE;
                 }
                 
@@ -387,7 +376,7 @@ namespace BaseHook
                 {
                     if (WindowedMode::ShouldHandle())
                     {
-                        LOG_INFO("D3D9 CreateDevice: Overriding hDeviceWindow (%p -> %p) to prevent Proxy Window usage.", params.hDeviceWindow, hFocusWindow);
+                        LOG_INFO("hkIDirect3D9_CreateDevice: Overriding hDeviceWindow (%p -> %p) to prevent proxy window usage.", params.hDeviceWindow, hFocusWindow);
                         params.hDeviceWindow = hFocusWindow;
                     }
                 }
@@ -395,7 +384,7 @@ namespace BaseHook
                 {
                      if (WindowedMode::ShouldHandle())
                     {
-                        LOG_INFO("D3D9 CreateDevice: Overriding hDeviceWindow (%p -> %p) to prevent Proxy Window usage.", params.hDeviceWindow, Data::hWindow);
+                        LOG_INFO("hkIDirect3D9_CreateDevice: Overriding hDeviceWindow (%p -> %p) to prevent proxy window usage.", params.hDeviceWindow, Data::hWindow);
                         params.hDeviceWindow = Data::hWindow;
                     }
                 }
@@ -415,7 +404,6 @@ namespace BaseHook
                 }
             }
 
-            LOG_INFO("hkIDirect3D9_CreateDevice: Calling original with pParams=%p (Spoofed=%d)", pParamsToUse, (pParamsToUse == &params));
             HRESULT hr = oIDirect3D9_CreateDevice(pD3D, Adapter, DeviceType, hFocusWindow, BehaviorFlags, pParamsToUse, ppReturnedDeviceInterface);
             if (SUCCEEDED(hr) && ppReturnedDeviceInterface && *ppReturnedDeviceInterface)
             {
@@ -432,7 +420,6 @@ namespace BaseHook
                     D3DSURFACE_DESC desc;
                     pBackBuffer->GetDesc(&desc);
                     pBackBuffer->Release();
-                    LOG_INFO("  Created BackBuffer Size: %dx%d", desc.Width, desc.Height);
                     WindowedMode::NotifyResolutionChange(desc.Width, desc.Height);
                 }
 
@@ -447,13 +434,6 @@ namespace BaseHook
 
         static HRESULT STDMETHODCALLTYPE hkIDirect3D9Ex_CreateDeviceEx(IDirect3D9Ex* pD3D, UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode, IDirect3DDevice9Ex** ppReturnedDeviceInterface)
         {
-            LOG_INFO("hkIDirect3D9Ex_CreateDeviceEx: Adapter=%u, DeviceType=%d, hFocus=%p, Flags=%08X", Adapter, DeviceType, hFocusWindow, BehaviorFlags);
-            if (pPresentationParameters) {
-                LOG_INFO("  Params: BackBuffer=%dx%d, Windowed=%d, hDeviceWindow=%p",
-                    pPresentationParameters->BackBufferWidth, pPresentationParameters->BackBufferHeight,
-                    pPresentationParameters->Windowed, pPresentationParameters->hDeviceWindow);
-            }
-
             WindowedMode::CheckAndApplyPendingState();
 
             D3DPRESENT_PARAMETERS params;
@@ -473,13 +453,13 @@ namespace BaseHook
                 }
 
                 if (WindowedMode::ShouldHandle()) {
-                    LOG_INFO("D3D9Ex CreateDeviceEx Spoof: Forced Windowed");
+                    LOG_INFO("hkIDirect3D9Ex_CreateDeviceEx: Forced windowed.");
                     params.Windowed = TRUE;
                     params.FullScreen_RefreshRateInHz = 0;
                     pFullscreenModeToUse = nullptr;
                 }
                 else if (WindowedMode::g_State.activeMode == WindowedMode::Mode::ExclusiveFullscreen) {
-                    LOG_INFO("D3D9Ex CreateDeviceEx Spoof: Forced Exclusive Fullscreen");
+                    LOG_INFO("hkIDirect3D9Ex_CreateDeviceEx: Forced exclusive fullscreen.");
                     params.Windowed = FALSE;
                 }
                 
@@ -488,7 +468,7 @@ namespace BaseHook
                 {
                     if (WindowedMode::ShouldHandle())
                     {
-                        LOG_INFO("D3D9Ex CreateDeviceEx: Overriding hDeviceWindow (%p -> %p) to prevent Proxy Window usage.", params.hDeviceWindow, hFocusWindow);
+                        LOG_INFO("hkIDirect3D9Ex_CreateDeviceEx: Overriding hDeviceWindow (%p -> %p) to prevent proxy window usage.", params.hDeviceWindow, hFocusWindow);
                         params.hDeviceWindow = hFocusWindow;
                     }
                 }
@@ -496,7 +476,7 @@ namespace BaseHook
                 {
                      if (WindowedMode::ShouldHandle())
                     {
-                        LOG_INFO("D3D9Ex CreateDeviceEx: Overriding hDeviceWindow (%p -> %p) to prevent Proxy Window usage.", params.hDeviceWindow, Data::hWindow);
+                        LOG_INFO("hkIDirect3D9Ex_CreateDeviceEx: Overriding hDeviceWindow (%p -> %p) to prevent proxy window usage.", params.hDeviceWindow, Data::hWindow);
                         params.hDeviceWindow = Data::hWindow;
                     }
                 }
@@ -517,7 +497,6 @@ namespace BaseHook
             }
 
             HRESULT hr = oIDirect3D9Ex_CreateDeviceEx(pD3D, Adapter, DeviceType, hFocusWindow, BehaviorFlags, pParamsToUse, pFullscreenModeToUse, ppReturnedDeviceInterface);
-            LOG_INFO("hkIDirect3D9Ex_CreateDeviceEx: Result=%08X, Device=%p", hr, (ppReturnedDeviceInterface ? *ppReturnedDeviceInterface : nullptr));
 
             if (SUCCEEDED(hr) && ppReturnedDeviceInterface && *ppReturnedDeviceInterface)
             {
@@ -532,7 +511,6 @@ namespace BaseHook
                     D3DSURFACE_DESC desc;
                     pBackBuffer->GetDesc(&desc);
                     pBackBuffer->Release();
-                    LOG_INFO("  Created BackBuffer Size: %dx%d", desc.Width, desc.Height);
                     WindowedMode::NotifyResolutionChange(desc.Width, desc.Height);
                 }
 
@@ -553,16 +531,14 @@ namespace BaseHook
 
         static IDirect3D9* WINAPI hkDirect3DCreate9(UINT SDKVersion)
         {
-            LOG_INFO("hkDirect3DCreate9: Called with SDKVersion=%u", SDKVersion);
             if (!oDirect3DCreate9) return NULL;
             IDirect3D9* pD3D = oDirect3DCreate9(SDKVersion);
-            LOG_INFO("hkDirect3DCreate9: Returned pD3D=%p", pD3D);
             if (pD3D && !oIDirect3D9_CreateDevice) {
                 void** vtable = *(void***)pD3D;
                 if (MH_CreateHook(vtable[16], hkIDirect3D9_CreateDevice, (LPVOID*)&oIDirect3D9_CreateDevice) == MH_OK)
                 {
                     MH_EnableHook(vtable[16]);
-                    LOG_INFO("hkDirect3DCreate9: Hooked IDirect3D9::CreateDevice at %p", vtable[16]);
+                    LOG_INFO("hkDirect3DCreate9: Hooked IDirect3D9::CreateDevice.");
                 }
             }
             return pD3D;
@@ -570,21 +546,19 @@ namespace BaseHook
 
         static HRESULT WINAPI hkDirect3DCreate9Ex(UINT SDKVersion, IDirect3D9Ex** ppD3D)
         {
-            LOG_INFO("hkDirect3DCreate9Ex: Called with SDKVersion=%u", SDKVersion);
             if (!oDirect3DCreate9Ex) return E_FAIL;
             HRESULT hr = oDirect3DCreate9Ex(SDKVersion, ppD3D);
-            LOG_INFO("hkDirect3DCreate9Ex: Result=%08X, ppD3D=%p, *ppD3D=%p", hr, ppD3D, (ppD3D ? *ppD3D : nullptr));
             if (SUCCEEDED(hr) && ppD3D && *ppD3D) {
                 void** vtable = *(void***)*ppD3D;
                 if (!oIDirect3D9_CreateDevice && MH_CreateHook(vtable[16], hkIDirect3D9_CreateDevice, (LPVOID*)&oIDirect3D9_CreateDevice) == MH_OK)
                 {
                     MH_EnableHook(vtable[16]);
-                    LOG_INFO("hkDirect3DCreate9Ex: Hooked IDirect3D9::CreateDevice at %p", vtable[16]);
+                    LOG_INFO("hkDirect3DCreate9Ex: Hooked IDirect3D9::CreateDevice.");
                 }
                 if (!oIDirect3D9Ex_CreateDeviceEx && MH_CreateHook(vtable[20], hkIDirect3D9Ex_CreateDeviceEx, (LPVOID*)&oIDirect3D9Ex_CreateDeviceEx) == MH_OK)
                 {
                     MH_EnableHook(vtable[20]);
-                    LOG_INFO("hkDirect3DCreate9Ex: Hooked IDirect3D9Ex::CreateDeviceEx at %p", vtable[20]);
+                    LOG_INFO("hkDirect3DCreate9Ex: Hooked IDirect3D9Ex::CreateDeviceEx.");
                 }
             }
             return hr;
@@ -848,42 +822,29 @@ namespace BaseHook
 
             s_IsInstalling = true;
 
-            LOG_INFO("InstallD3D9CreateHooksLate: Starting...");
             if (oDirect3DCreate9) {
-                LOG_INFO("InstallD3D9CreateHooksLate: Creating dummy D3D9 device for VTable hook...");
                 ComPtr<IDirect3D9> pDummy;
                 pDummy.Attach(oDirect3DCreate9(D3D_SDK_VERSION));
                 
                 if (pDummy) {
                     void** vtable = *(void***)pDummy.Get();
-                    LOG_INFO("InstallD3D9CreateHooksLate: Dummy D3D9=%p, VTable=%p", pDummy.Get(), vtable);
                     if (!oIDirect3D9_CreateDevice) {
                         if (MH_CreateHook(vtable[16], hkIDirect3D9_CreateDevice, (LPVOID*)&oIDirect3D9_CreateDevice) == MH_OK) {
                             MH_EnableHook(vtable[16]);
                             LOG_INFO("IDirect3D9::CreateDevice (VTable) hooked successfully (Late).");
-                        } else {
-                            LOG_ERROR("InstallD3D9CreateHooksLate: Failed to hook IDirect3D9::CreateDevice (VTable).");
                         }
-                    } else {
-                         LOG_INFO("InstallD3D9CreateHooksLate: IDirect3D9::CreateDevice already hooked.");
                     }
-                } else {
-                    LOG_ERROR("InstallD3D9CreateHooksLate: Failed to create dummy D3D9 device.");
                 }
-            } else {
-                LOG_INFO("InstallD3D9CreateHooksLate: oDirect3DCreate9 is NULL, skipping D3D9.");
             }
 
             if (oDirect3DCreate9Ex) {
-                LOG_INFO("InstallD3D9CreateHooksLate: Creating dummy D3D9Ex device for VTable hook...");
                 ComPtr<IDirect3D9Ex> pDummyEx;
                 if (SUCCEEDED(oDirect3DCreate9Ex(D3D_SDK_VERSION, pDummyEx.ReleaseAndGetAddressOf())) && pDummyEx) {
                     void** vtable = *(void***)pDummyEx.Get();
-                    LOG_INFO("InstallD3D9CreateHooksLate: Dummy D3D9Ex=%p, VTable=%p", pDummyEx.Get(), vtable);
                     if (!oIDirect3D9_CreateDevice) {
                          if (MH_CreateHook(vtable[16], hkIDirect3D9_CreateDevice, (LPVOID*)&oIDirect3D9_CreateDevice) == MH_OK) {
                              MH_EnableHook(vtable[16]);
-                             LOG_INFO("IDirect3D9Ex::CreateDevice (VTable) hooked successfully (Late).");
+                             LOG_INFO("IDirect3D9::CreateDevice (VTable) hooked successfully (Late).");
                          }
                     }
                     if (!oIDirect3D9Ex_CreateDeviceEx) {
@@ -892,11 +853,7 @@ namespace BaseHook
                              LOG_INFO("IDirect3D9Ex::CreateDeviceEx (VTable) hooked successfully (Late).");
                          }
                     }
-                } else {
-                     LOG_ERROR("InstallD3D9CreateHooksLate: Failed to create dummy D3D9Ex device.");
                 }
-            } else {
-                LOG_INFO("InstallD3D9CreateHooksLate: oDirect3DCreate9Ex is NULL, skipping D3D9Ex.");
             }
 
             s_LateHooksInstalled = true;

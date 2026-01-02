@@ -531,7 +531,6 @@ namespace
             return false;
         }
 
-        LOG_INFO("DI8: Private DirectInput interface created (%p).", g_privateDI);
         return true;
     }
 
@@ -560,7 +559,6 @@ namespace
                 
                 if (IsXInputDevice(vid, pid))
                 {
-                    LOG_INFO("DI8: Ignoring XInput device %p (VID:%04X PID:%04X) for private polling.", device, vid, pid);
                     device->Release();
                     return false;
                 }
@@ -645,7 +643,6 @@ namespace
                     PrivateDevice newDev{};
                     if (CreatePrivateDevice(guid, newDev))
                     {
-                        LOG_INFO("DI8: Private polling tracking new device %p.", newDev.device);
                         newDevices.push_back(std::move(newDev));
                     }
                 }
@@ -675,7 +672,6 @@ namespace
                 {
                     if (!it->seenInLastEnum)
                     {
-                        LOG_INFO("DI8: Removing private device %p (no longer present).", it->device);
                         ReleasePrivateDevice(*it);
                         it = g_privateDevices.erase(it);
                     }
@@ -1270,7 +1266,6 @@ void ProcessDeviceState(IDirectInputDevice8* pDevice, DWORD cbData, LPVOID lpvDa
                             info.axes[i].max = range.lMax;
                         }
                     }
-                    LOG_INFO("DI8: Device %p (Type %d) detected.", pDevice, info.type);
                 }
 
                 g_Devices[pDevice] = info;
@@ -1492,7 +1487,6 @@ HRESULT STDMETHODCALLTYPE hkSetCooperativeLevel(IDirectInputDevice8* pDevice, HW
     {
         dwFlags &= ~DISCL_EXCLUSIVE;
         dwFlags |= DISCL_NONEXCLUSIVE;
-        LOG_INFO("DI8: Enforcing DISCL_NONEXCLUSIVE for device %p", pDevice);
     }
 
     IDirectInputDevice8_SetCooperativeLevel_t oSetCooperativeLevel = nullptr;
@@ -1527,7 +1521,6 @@ void HookDeviceMethods(IDirectInputDevice8* device)
         {
             g_DeviceMethodTrampolines[pGetDeviceState] = pTrampoline;
             g_hooked_functions.insert(pGetDeviceState);
-            LOG_INFO("DI8: Hooked GetDeviceState at %p", pGetDeviceState);
         }
     }
 
@@ -1539,7 +1532,6 @@ void HookDeviceMethods(IDirectInputDevice8* device)
         {
             g_DeviceMethodTrampolines[pGetDeviceData] = pTrampoline;
             g_hooked_functions.insert(pGetDeviceData);
-            LOG_INFO("DI8: Hooked GetDeviceData at %p", pGetDeviceData);
         }
     }
 
@@ -1551,7 +1543,6 @@ void HookDeviceMethods(IDirectInputDevice8* device)
         {
             g_DeviceMethodTrampolines[pSetCooperativeLevel] = pTrampoline;
             g_hooked_functions.insert(pSetCooperativeLevel);
-            LOG_INFO("DI8: Hooked SetCooperativeLevel at %p", pSetCooperativeLevel);
         }
     }
 }
@@ -1624,7 +1615,6 @@ HRESULT WINAPI hkDirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID rii
                 {
                     g_FactoryMethodTrampolines[pCreateDevice] = pTrampoline;
                     g_hooked_functions.insert(pCreateDevice);
-                    LOG_INFO("DI8: Hooked CreateDevice (ANSI) at %p", pCreateDevice);
                 }
             }
             else if (IsEqualGUID(riidltf, IID_IDirectInput8W_Local))
@@ -1635,7 +1625,6 @@ HRESULT WINAPI hkDirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID rii
                 {
                     g_FactoryMethodTrampolines[pCreateDevice] = pTrampoline;
                     g_hooked_functions.insert(pCreateDevice);
-                    LOG_INFO("DI8: Hooked CreateDevice (Unicode) at %p", pCreateDevice);
                 }
             }
         }
@@ -1695,7 +1684,6 @@ namespace BaseHook { namespace Hooks {
             if (MH_CreateHook(pDirectInput8Create, &hkDirectInput8Create, reinterpret_cast<void**>(&oDirectInput8Create)) == MH_OK &&
                 MH_EnableHook(pDirectInput8Create) == MH_OK) {
                 g_hooked_functions.insert(pDirectInput8Create);
-                LOG_INFO("DI8: Hooked DirectInput8Create export.");
             }
         }
 
@@ -1711,7 +1699,7 @@ namespace BaseHook { namespace Hooks {
 
         if (hWnd)
         {
-            LOG_INFO("DI8: Game window available (%p). Enabling private DirectInput polling.", hWnd);
+            LOG_INFO("DI8: Private polling enabled for window %p.", hWnd);
             SchedulePrivateRefresh();
             RefreshPrivateDevices(true);
         }
@@ -1724,7 +1712,7 @@ namespace BaseHook { namespace Hooks {
         case DBT_DEVNODES_CHANGED:
         case DBT_DEVICEARRIVAL:
         case DBT_DEVICEREMOVECOMPLETE:
-            LOG_INFO("DI8: Device change notification (%u). Refresh queued.", static_cast<unsigned>(wParam));
+            LOG_INFO("DI8: Controller change detected (%u).", static_cast<unsigned>(wParam));
             SchedulePrivateRefresh();
             OnSonyDeviceChange();
             break;

@@ -24,21 +24,17 @@ namespace BaseHook
 
         void InstallEarlyHooks(HMODULE hModule)
         {
-            LOG_INFO("InstallEarlyHooks: Starting...");
-            
             // Initialize MinHook
             if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED)
             {
-                LOG_ERROR("InstallEarlyHooks: MinHook Init Failed.");
+                LOG_ERROR("InstallEarlyHooks: MinHook initialization failed.");
                 return;
             }
 
             // Install Windowed Mode Hooks (User32 / D3D Creation)
             // Always install hooks to ensure we catch CreateWindowEx and get the window handle early.
-            LOG_INFO("InstallEarlyHooks: Installing WindowedMode hooks...");
             BaseHook::WindowedMode::InstallHooks();
             g_WindowHooksInstalled = true;
-            LOG_INFO("InstallEarlyHooks: Done.");
         }
 
         void FinishInitialization()
@@ -52,12 +48,11 @@ namespace BaseHook
 
             if (!isD3D9Hooked && !isD3D11Hooked) {
                 // Not ready yet. D3DCreateHooks will call us again when device is created.
-                LOG_INFO("FinishInitialization: Graphics hooks not yet bound. Waiting for Device Creation...");
                 return;
             }
 
             Data::bGraphicsInitialized = true;
-            LOG_INFO("FinishInitialization: Graphics Initialized.");
+            LOG_INFO("FinishInitialization: Graphics initialized.");
         }
 
         static BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam)
@@ -69,7 +64,6 @@ namespace BaseHook
                 return TRUE;
 
             if (!IsWindowVisible(handle)) {
-                // LOG_INFO("EnumWindows: Skipped hidden window %p", handle);
                 return TRUE;
             }
 
@@ -83,26 +77,17 @@ namespace BaseHook
             int w = rect.right - rect.left;
             int h = rect.bottom - rect.top;
 
-            LOG_INFO("EnumWindows: Examining window %p (Class=%s, Size=%dx%d)", handle, className, w, h);
-
-            if (strcmp(className, "ConsoleWindowClass") == 0) {
-                 LOG_INFO("  Skipped: ConsoleWindowClass");
+            if (strcmp(className, "ConsoleWindowClass") == 0 || w <= 32 || h <= 32) {
                  return TRUE;
             }
 
-            if (w <= 32 || h <= 32) {
-                LOG_INFO("  Skipped: Too small");
-                return TRUE;
-            }
-
             Data::hWindow = handle;
-            LOG_INFO("EnumWindows: Accepted window %p", handle);
+            LOG_INFO("EnumWindows: Found window %p (%s)", handle, className);
             return FALSE; // Stop enumeration
         }
 
         bool Init()
         {
-            LOG_INFO("Init: Starting...");
             // Double check MinHook init (in case EarlyHooks wasn't called or failed)
             if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED) {
                 LOG_ERROR("Failed to initialize MinHook.");
@@ -115,7 +100,6 @@ namespace BaseHook
             }
 
             // Hook Inputs
-            LOG_INFO("Init: Hooking Inputs...");
             InitDirectInput();
             InitXInput();
 
@@ -139,28 +123,14 @@ namespace BaseHook
             {
                 LOG_INFO("Init: Effective DirectX Version: %d", effectiveDX);
             }
-            else
-            {
-                LOG_INFO("Init: Effective DirectX Version: Auto (Failed to Detect)");
-            }
 
-            // Late-install D3D9 hooks (safe from Main Thread)
+            // Late-install hooks
             if (effectiveDX == 9) {
-                LOG_INFO("Init: Late-installing D3D9 hooks...");
                 BaseHook::WindowedMode::InstallD3D9HooksLate();
             }
             else if (effectiveDX == 10 || effectiveDX == 11) {
-                LOG_INFO("Init: Late-installing DXGI hooks...");
                 BaseHook::WindowedMode::InstallDXGIHooksLate();
             }
-
-            // Init Kiero for rendering hooks
-            const char* dxVerStr = "Auto";
-            if (effectiveDX == 9) dxVerStr = "D3D9";
-            else if (effectiveDX == 10) dxVerStr = "D3D10";
-            else if (effectiveDX == 11) dxVerStr = "D3D11";
-            
-            LOG_INFO("Init: Render Type: %s (Using Direct VTable Hooks)", dxVerStr);
 
             // Ensure Windowed Mode hooks are applied (idempotent)
             BaseHook::WindowedMode::InstallHooks();
@@ -168,43 +138,30 @@ namespace BaseHook
             // If we didn't find a window during early hook phase, try to find it now
             if (Data::hWindow == NULL)
             {
-                LOG_INFO("Init: Data::hWindow is NULL, enumerating windows...");
                 EnumWindows(EnumWindowsCallback, 0);
                 if (Data::hWindow) {
-                    LOG_INFO("Late Injection: Found window %p", Data::hWindow);
                     if (BaseHook::WindowedMode::ShouldHandle()) {
                         BaseHook::WindowedMode::Apply(Data::hWindow);
                     }
                 }
             }
-            else {
-                LOG_INFO("Init: Data::hWindow already set: %p", Data::hWindow);
-            }
 
             // Always ensure WndProc is hooked (if window exists)
             if (Data::hWindow) {
                 InstallWndProcHook();
-            } else {
-                LOG_INFO("Init: Window not found yet. Deferred WndProc hook to CreateWindowEx.");
             }
 
-            LOG_INFO("Init: Basehook initialized successfully.");
+            LOG_INFO("Init: Basehook initialized.");
             return true;
         }
         
         void InstallWndProcHook()
         {
-            if (!Data::hWindow) {
-                LOG_ERROR("InstallWndProcHook: Data::hWindow is NULL.");
-                return;
-            }
+            if (!Data::hWindow) return;
 
             if (Data::oWndProc == nullptr) {
-                 LOG_INFO("InstallWndProcHook: Hooking WndProc for %p...", Data::hWindow);
                  Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
-                 LOG_INFO("InstallWndProcHook: Original WndProc=%p", Data::oWndProc);
-            } else {
-                 LOG_INFO("InstallWndProcHook: Already hooked (%p).", Data::oWndProc);
+                 LOG_INFO("InstallWndProcHook: Hooked window %p.", Data::hWindow);
             }
 
             NotifyDirectInputWindow(Data::hWindow);
