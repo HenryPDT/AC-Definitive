@@ -60,7 +60,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)CommonLib\PluginAPI;$(SolutionDir)CommonLib\AutoAssemblerKinda\include;$(SolutionDir)CommonLib\Serialization\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\Patches;$(ProjectDir)include;$(SolutionDir)AC-RE\ACB-RE\include;$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)CommonLib\PluginAPI;$(SolutionDir)CommonLib\AutoAssemblerKinda\include;$(SolutionDir)CommonLib\Serialization\include;$(SolutionDir)CommonLib\Utils\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -77,7 +77,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)CommonLib\PluginAPI;$(SolutionDir)CommonLib\AutoAssemblerKinda\include;$(SolutionDir)CommonLib\Serialization\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include\Patches;$(ProjectDir)include;$(SolutionDir)AC-RE\ACB-RE\include;$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)CommonLib\PluginAPI;$(SolutionDir)CommonLib\AutoAssemblerKinda\include;$(SolutionDir)CommonLib\Serialization\include;$(SolutionDir)CommonLib\Utils\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -93,9 +93,9 @@
     <ClCompile Include="src\Patches\SkipIntro.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\EaglePatch.h" />
-    <ClInclude Include="src\Patches\Controller.h" />
-    <ClInclude Include="src\Patches\SkipIntro.h" />
+    <ClInclude Include="include\EaglePatch.h" />
+    <ClInclude Include="include\Patches\Controller.h" />
+    <ClInclude Include="include\Patches\SkipIntro.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\CommonLib\AutoAssemblerKinda\AutoAssemblerKinda.vcxproj">

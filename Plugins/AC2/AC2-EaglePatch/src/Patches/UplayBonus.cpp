@@ -1,38 +1,36 @@
-#include "../EaglePatch.h"
+#include "EaglePatch.h"
 #include "UplayBonus.h"
 #include <AutoAssemblerKinda.h>
+#include <PatternScanner.h>
+
 
 namespace AC2EaglePatch
 {
+    struct sAddresses {
+        static uintptr_t Hook;
+        static uintptr_t EndClass;
+    };
+
+    uintptr_t sAddresses::Hook = 0;
+    uintptr_t sAddresses::EndClass = 0;
+
     typedef void(__thiscall* EndClass_t)(void* thisPtr);
     static EndClass_t fnEndClass = nullptr;
 
-    void Hook_PlayerOptions(AllRegisters* params)
+    // Hook Wrapper
+    DEFINE_HOOK(PlayerOptions_Hook, PlayerOptions_Return)
     {
-        // sub esi, 0x3D
-        // In the original manual patch, it did:
-        // sub esi, 0x3D
-        // ... writes ...
-        // add esi, 0x3D
-        // call EndClass
-        
-        // ESI seems to be the pointer to the data structure (or offset from it).
-        // Let's assume ESI is the pointer we want to modify relative to - 0x3D.
-        
-        uint8_t* data = (uint8_t*)(params->esi - 0x3D);
+        __asm {
+            mov byte ptr [esi - 0x3D + 0x36], 1 // Bonus Dye
+            mov byte ptr [esi - 0x3D + 0x3B], 1 // Knife Belt
+            mov byte ptr [esi - 0x3D + 0x3C], 1 // Altair Robes
+            mov byte ptr [esi - 0x3D + 0x3D], 1 // Auditore Crypt
 
-        // Enable UPlay bonuses
-        data[0x36] = 1; // Bonus Dye
-        data[0x3B] = 1; // Knife Belt
-        data[0x3C] = 1; // Altair Robes
-        data[0x3D] = 1; // Auditore Crypt
+            // Restore the original call
+            // fnEndClass is __thiscall, ECX is already the thisPtr from the game
+            call fnEndClass
 
-        // Call EndClass(ECX)
-        // Original code: call EndClass
-        // We need to call it manually.
-        if (fnEndClass)
-        {
-            fnEndClass((void*)params->ecx);
+            jmp [PlayerOptions_Return]
         }
     }
 
@@ -41,50 +39,33 @@ namespace AC2EaglePatch
         UplayBonusHook(uintptr_t hookAddr, uintptr_t endClassAddr)
         {
             fnEndClass = (EndClass_t)endClassAddr;
-            
-            // Replaces the call to EndClass or whatever was there.
-            // Original code:
-            // call EndClass
-            // retn
-            
-            // We hook at `hookAddr`. 
-            // `PresetScript_CCodeInTheMiddle` will replace 5 bytes.
-            // We pass `false` for `executeStolenBytes` because `Hook_PlayerOptions` does the work (including calling EndClass).
-            // `whereToReturn` is implicitly next instruction if we don't specify or if we return normally.
-            // But wait, `Hook_PlayerOptions` calls `EndClass`.
-            // Does it need to RETN?
-            // The hook wrapper restores registers and then jumps back to `whereToReturn`.
-            // If `whereToReturn` is `std::nullopt`, it jumps to `hookAddr + 5`.
-            // If the original instruction was a CALL (5 bytes) followed by RETN.
-            // Then jumping to `hookAddr + 5` (which is RETN) is correct.
-            
-            PresetScript_CCodeInTheMiddle(hookAddr, 5, Hook_PlayerOptions, std::nullopt, false);
+            PlayerOptions_Return = hookAddr + 5;
+            PresetScript_InjectJump(hookAddr, (uintptr_t)&PlayerOptions_Hook);
         }
     };
 
     void InitUplayBonus(uintptr_t baseAddr, GameVersion version)
     {
-        uintptr_t hookAddr = 0;
-        uintptr_t endClassAddr = 0;
+        auto hookResult = Utils::PatternScanner::ScanMain("83 C6 3D 56 8B CF E8 ? ? ? ? 8B CF E8")
+            .Offset(13);
 
-        switch (version)
+        if (hookResult)
         {
-        case GameVersion::Version1: // Uplay
-            hookAddr = baseAddr + 0x6D4723;
-            endClassAddr = baseAddr + 0x10BEB50;
-            break;
+            sAddresses::Hook = hookResult.As<uintptr_t>();
+            
+            // Extract the target of the 'call' instruction.
+            // Assuming standard x86 relative call: E8 <4-byte-offset>
+            // Instruction length is 5, offset is at index 1.
+            sAddresses::EndClass = hookResult.ResolveRelative(5, 1).As<uintptr_t>();
 
-        case GameVersion::Version2: // Retail 1.01
-            hookAddr = baseAddr + 0xCB06B3;
-            endClassAddr = baseAddr + 0x5FB540;
-            break;
+            static AutoAssembleWrapper<UplayBonusHook> hook(sAddresses::Hook, sAddresses::EndClass);
+            hook.Activate();
 
-        default: return;
+            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Uplay Bonuses enabled.");
         }
-
-        static AutoAssembleWrapper<UplayBonusHook> hook(hookAddr, endClassAddr);
-        hook.Activate();
-
-        if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Uplay Bonuses enabled.");
+        else
+        {
+            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] UplayBonus: Pattern NOT found!");
+        }
     }
 }

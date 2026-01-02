@@ -1,7 +1,10 @@
-#include "../EaglePatch.h"
+#include "EaglePatch.h"
 #include "Controller.h"
 #include <AutoAssemblerKinda.h>
+#include <PatternScanner.h>
 #include <cstring>
+
+using namespace Utils;
 
 namespace AC1EaglePatch
 {
@@ -37,7 +40,6 @@ namespace AC1EaglePatch
         static uintptr_t PadXenon_ctor;
         static uintptr_t PadProxyPC_AddPad;
         static uintptr_t _addXenonJoy_Patch;
-        static uintptr_t _addXenonJoy_JumpOut;
         static uintptr_t _PadProxyPC_Patch;
         static uint32_t* _descriptor_var;
     };
@@ -47,67 +49,113 @@ namespace AC1EaglePatch
     uintptr_t sAddresses::PadXenon_ctor = 0;
     uintptr_t sAddresses::PadProxyPC_AddPad = 0;
     uintptr_t sAddresses::_addXenonJoy_Patch = 0;
-    uintptr_t sAddresses::_addXenonJoy_JumpOut = 0;
     uintptr_t sAddresses::_PadProxyPC_Patch = 0;
     uint32_t* sAddresses::_descriptor_var = nullptr;
+
+    // Forward declaration
+    void __cdecl AddXenonPad();
+
+    // Hook Wrapper
+    DEFINE_HOOK(AddXenonJoy_HookFunction, AddXenonJoy_Return) {
+        __asm {
+            mov eax, [eax + 4]
+            mov [pPad], eax
+            pushad
+            pushfd
+            call AddXenonPad
+            popfd
+            popad
+            jmp [AddXenonJoy_Return]
+        }
+    }
 
     namespace
     {
         bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
         {
-            switch (version)
-            {
-            case GameVersion::Version1: // DX10
-                sAddresses::Pad_UpdateTimeStamps = baseAddr + 0x512620;
-                sAddresses::Pad_ScaleStickValues = baseAddr + 0x512910;
-                sAddresses::PadXenon_ctor = baseAddr + 0x4F5E30;
-                sAddresses::PadProxyPC_AddPad = baseAddr + 0x4EB7F0;
-                sAddresses::_addXenonJoy_Patch = baseAddr + 0x4F6609;
-                sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x4F6620;
-                sAddresses::_PadProxyPC_Patch = baseAddr + 0x4EA190;
-                sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x25A3710);
-                ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x503AB0);
-                ac_allocate = (t_ac_allocate)(baseAddr + 0x15BD0);
-                ac_delete = (t_ac_delete)(baseAddr + 0x4F60D0);
-                break;
+            // 1. Pad_ScaleStickValues & Pad_UpdateTimeStamps
+            // Pattern: mov ecx,[esi+500h]; lea eax,[esp+0Ch]
+            auto result1 = PatternScanner::ScanMain("8B 8E 00 05 00 00 8D");
+            if (!result1) return false;
 
-            case GameVersion::Version2: // DX9
-                sAddresses::Pad_UpdateTimeStamps = baseAddr + 0x53F990;
-                sAddresses::Pad_ScaleStickValues = baseAddr + 0x53FC80;
-                sAddresses::PadXenon_ctor = baseAddr + 0x5161A0;
-                sAddresses::PadProxyPC_AddPad = baseAddr + 0x50B2F0;
-                sAddresses::_addXenonJoy_Patch = baseAddr + 0x516979;
-                sAddresses::_addXenonJoy_JumpOut = baseAddr + 0x516990;
-                sAddresses::_PadProxyPC_Patch = baseAddr + 0x509C90;
-                sAddresses::_descriptor_var = (uint32_t*)(baseAddr + 0x161E680);
-                ac_getNewDescriptor = (t_ac_getNewDescriptor)(baseAddr + 0x524070);
-                ac_allocate = (t_ac_allocate)(baseAddr + 0x3A4510);
-                ac_delete = (t_ac_delete)(baseAddr + 0x516440);
-                break;
+            // Offset 0x23: call Pad_ScaleStickValues (Relative Call)
+            // Offset 0x2A: call Pad_UpdateTimeStamps (Relative Call)
+            sAddresses::Pad_ScaleStickValues = result1.Offset(0x23).ResolveRelative().address;
+            sAddresses::Pad_UpdateTimeStamps = result1.Offset(0x2A).ResolveRelative().address;
 
-            default:
-                return false;
-            }
+            // 2. _addXenonJoy_Patch
+            // Pattern: mov eax,[esi+04]; mov ecx,[eax]; mov edx,[ecx]; push 1
+            auto result2 = PatternScanner::ScanMain("8B 46 04 8B 08 8B 11 6A");
+            if (!result2) return false;
+
+            sAddresses::_addXenonJoy_Patch = result2.address;
+            // JumpOut is at +0x17 (end of the patch block in original code)
+            AddXenonJoy_Return = result2.address + 0x17;
+
+            // 3. _PadProxyPC_Patch
+            // Pattern: push esi; mov esi,ecx; mov eax,[esi+504h]; cmp eax,04
+            auto result3 = PatternScanner::ScanMain("56 8B F1 8B 86 04 05 00 00 83");
+            if (!result3) return false;
+
+            sAddresses::_PadProxyPC_Patch = result3.address;
+
+            // 4. PadXenon_ctor, Allocators, Descriptors
+            // Pattern: push ecx; push 10h; push 520h
+            auto result4 = PatternScanner::ScanMain("51 6A 10 68 20 05 00 00");
+            if (!result4) return false;
+            
+            // Offset -0x06: mov ecx, [_descriptor_var] (Opcode 8B 0D + Address)
+            sAddresses::_descriptor_var = (uint32_t*)result4.Dereference(-0x06 + 2).address;
+
+            // Offset 0x08: call ac_getNewDescriptor (Relative Call)
+            ac_getNewDescriptor = result4.Offset(0x08).ResolveRelative().As<t_ac_getNewDescriptor>();
+
+            // Offset 0x1A: call ac_allocate (Relative Call)
+            ac_allocate = result4.Offset(0x1A).ResolveRelative().As<t_ac_allocate>();
+
+            // Offset 0x38: call PadXenon_ctor (Relative Call)
+            sAddresses::PadXenon_ctor = result4.Offset(0x38).ResolveRelative().address;
+
+            // Offset 0x5B: call PadProxyPC_AddPad (Relative Call)
+            sAddresses::PadProxyPC_AddPad = result4.Offset(0x5B).ResolveRelative().address;
+
+            // Offset 0x69: call ac_delete (Relative Call)
+            ac_delete = result4.Offset(0x69).ResolveRelative().As<t_ac_delete>();
+
             return true;
         }
     }
 
+    // --- Allocators (Wrappers to match AC2/ACB/ACR structure) ---
+    void* ac_allocate_wrapper(int a1, uint32_t a2, void* a3, const void* a4, const char* a5, const char* a6, uint32_t a7, const char* a8) {
+        if (ac_allocate) return ac_allocate(a1, a2, a3, a4, a5, a6, a7, a8);
+        return nullptr;
+    }
+    void ac_delete_wrapper(void* ptr, void* a2, const char* a3) {
+        if (ac_delete) ac_delete(ptr, a2, a3);
+    }
+}
+
+namespace AC1::Scimitar {
     // --- Wrapper Calls ---
-    void scimitar::Pad::UpdatePad(InputBindings* a) {
+    void Pad::UpdatePad(InputBindings* a) {
         ((void(__thiscall*)(Pad*, InputBindings*))vtable[10])(this, a);
     }
-    void scimitar::Pad::UpdateTimeStamps() { ((void(__thiscall*)(Pad*))sAddresses::Pad_UpdateTimeStamps)(this); }
-    void scimitar::Pad::ScaleStickValues() { ((void(__thiscall*)(Pad*))sAddresses::Pad_ScaleStickValues)(this); }
-    scimitar::PadXenon* scimitar::PadXenon::_ctor(uint32_t padId) {
-        return ((PadXenon * (__thiscall*)(PadXenon*, uint32_t))sAddresses::PadXenon_ctor)(this, padId);
+    void Pad::UpdateTimeStamps() { ((void(__thiscall*)(Pad*))AC1EaglePatch::sAddresses::Pad_UpdateTimeStamps)(this); }
+    void Pad::ScaleStickValues() { ((void(__thiscall*)(Pad*))AC1EaglePatch::sAddresses::Pad_ScaleStickValues)(this); }
+    PadXenon* PadXenon::_ctor(uint32_t padId) {
+        return ((PadXenon * (__thiscall*)(PadXenon*, uint32_t))AC1EaglePatch::sAddresses::PadXenon_ctor)(this, padId);
     }
-    bool scimitar::PadProxyPC::AddPad(scimitar::Pad* a, PadType b, const wchar_t* c, uint16_t d, uint16_t e) {
-        return ((bool(__thiscall*)(PadProxyPC*, scimitar::Pad*, PadType, const wchar_t*, uint16_t, uint16_t))sAddresses::PadProxyPC_AddPad)(this, a, b, c, d, e);
+    bool PadProxyPC::AddPad(Pad* a, PadType b, const wchar_t* c, uint16_t d, uint16_t e) {
+        return ((bool(__thiscall*)(PadProxyPC*, Pad*, PadType, const wchar_t*, uint16_t, uint16_t))AC1EaglePatch::sAddresses::PadProxyPC_AddPad)(this, a, b, c, d, e);
     }
-    void scimitar::PadXenon::operator_new(size_t size, void** out) {
-        *out = ac_allocate(2, sizeof(PadXenon), ac_getNewDescriptor(sizeof(PadXenon), 16, *sAddresses::_descriptor_var), nullptr, nullptr, nullptr, 0, nullptr);
+    void PadXenon::operator_new(size_t size, void** out) {
+        *out = AC1EaglePatch::ac_allocate_wrapper(2, sizeof(PadXenon), AC1EaglePatch::ac_getNewDescriptor(sizeof(PadXenon), 16, *AC1EaglePatch::sAddresses::_descriptor_var), nullptr, nullptr, nullptr, 0, nullptr);
     }
+}
 
+namespace AC1EaglePatch
+{
     // --- Injection Function ---
     void __cdecl AddXenonPad()
     {
@@ -128,7 +176,7 @@ namespace AC1EaglePatch
                 if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] XInput Controller successfully injected.");
             } else {
                 // Failed to add pad, cleanup memory to prevent leak
-                ac_delete(padXenon, nullptr, nullptr);
+                ac_delete_wrapper(padXenon, nullptr, nullptr);
                 padXenon = nullptr;
             }
         }
@@ -259,36 +307,18 @@ namespace AC1EaglePatch
     }
 
     // --- ASM Hooks ---
+    
     struct AddXenonJoyHook : AutoAssemblerCodeHolder_Base
     {
         AddXenonJoyHook() {
-            DEFINE_ADDR(hook_addr, sAddresses::_addXenonJoy_Patch);
-            DEFINE_ADDR(ret_addr, sAddresses::_addXenonJoy_JumpOut);
-            DEFINE_ADDR(fnAddXenonPad, (uintptr_t)&AddXenonPad);
-            DEFINE_ADDR(var_pPad, (uintptr_t)&pPad);
-            
-            ALLOC(newmem, 128, sAddresses::_addXenonJoy_Patch);
-
-            hook_addr = { db(0xE9), RIP(newmem) };
-            newmem = {
-                "8B 40 04",                 // mov eax, [eax+4]
-                "A3", ABS(var_pPad, 4),     // mov [pPad], eax
-                "60",                       // pushad
-                "9C",                       // pushfd
-                "E8", RIP(fnAddXenonPad),   // call AddXenonPad
-                "9D",                       // popfd
-                "61",                       // popad
-                "E9", RIP(ret_addr)
-            };
+            PresetScript_InjectJump(sAddresses::_addXenonJoy_Patch, (uintptr_t)&AddXenonJoy_HookFunction);
         }
     };
     
     struct PadProxyUpdateHook : AutoAssemblerCodeHolder_Base
     {
         PadProxyUpdateHook() {
-            DEFINE_ADDR(hook_addr, sAddresses::_PadProxyPC_Patch);
-            DEFINE_ADDR(fnUpdate, (uintptr_t)&Hook_PadProxyPC_Update);
-            hook_addr = { "E9", RIP(fnUpdate) };
+            PresetScript_InjectJump(sAddresses::_PadProxyPC_Patch, (uintptr_t)&Hook_PadProxyPC_Update);
         }
     };
 
@@ -307,5 +337,10 @@ namespace AC1EaglePatch
         hook2.Activate();
         
         if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Controller patches applied.");
+    }
+
+    void UpdateKeyboardLayout(int keyboardLayout)
+    {
+        NEEDED_KEYBOARD_SET = keyboardLayout;
     }
 }

@@ -29,9 +29,7 @@ public:
         }
         if (!g_imgui_context_set) return;
 
-        ImGui::Begin("ACB Parkour Mod");
         ImGui::Text("This is the menu for the ACB plugin.");
-        ImGui::End();
     }
 
     void OnUpdate() override

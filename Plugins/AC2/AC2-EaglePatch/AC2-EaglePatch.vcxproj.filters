@@ -12,6 +12,9 @@
     <Filter Include="Source Files\Patches">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Patches">
+      <UniqueIdentifier>{D2A3B4C5-E6F7-408A-9B0C-1D2E3F4A5B6E}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\EaglePatch.cpp">
@@ -26,25 +29,31 @@
     <ClCompile Include="src\Patches\Graphics.cpp">
       <Filter>Source Files\Patches</Filter>
     </ClCompile>
+    <ClCompile Include="src\Patches\FPSUnlock.cpp">
+      <Filter>Source Files\Patches</Filter>
+    </ClCompile>
     <ClCompile Include="src\Patches\UplayBonus.cpp">
       <Filter>Source Files\Patches</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\EaglePatch.h">
+    <ClInclude Include="include\EaglePatch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\Patches\Controller.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\Patches\Controller.h">
+      <Filter>Header Files\Patches</Filter>
     </ClInclude>
-    <ClInclude Include="src\Patches\SkipIntro.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\Patches\SkipIntro.h">
+      <Filter>Header Files\Patches</Filter>
     </ClInclude>
-    <ClInclude Include="src\Patches\Graphics.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\Patches\Graphics.h">
+      <Filter>Header Files\Patches</Filter>
     </ClInclude>
-    <ClInclude Include="src\Patches\UplayBonus.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\Patches\FPSUnlock.h">
+      <Filter>Header Files\Patches</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Patches\UplayBonus.h">
+      <Filter>Header Files\Patches</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

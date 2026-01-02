@@ -1,5 +1,6 @@
-#include "../EaglePatch.h"
+#include "EaglePatch.h"
 #include <AutoAssemblerKinda.h>
+#include <PatternScanner.h>
 
 namespace AC2EaglePatch
 {
@@ -14,21 +15,14 @@ namespace AC2EaglePatch
 
     void InitSkipIntro(uintptr_t baseAddr, GameVersion version)
     {
-        uintptr_t skipAddr = 0;
-        switch (version)
-        {
-        case GameVersion::Version1: // Uplay
-            skipAddr = baseAddr + 0x1494E;
-            break;
-        case GameVersion::Version2: // Retail 1.01
-            skipAddr = baseAddr + 0x148EE;
-            break;
-        default: return;
-        }
+        auto skipAddr = Utils::PatternScanner::ScanMain("75 0C E8 ?? ?? ?? 00");
 
-        static AutoAssembleWrapper<SkipIntroHook> hook(skipAddr);
-        hook.Activate();
-        
-        if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Skip Intro patch applied.");
+        if (skipAddr)
+        {
+            static AutoAssembleWrapper<SkipIntroHook> hook(skipAddr.As<uintptr_t>());
+            hook.Activate();
+            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Skip Intro patch applied.");
+        }
+        else if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] SkipIntro: Pattern NOT found!");
     }
 }

@@ -12,6 +12,9 @@
     <Filter Include="Source Files\Patches">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Patches">
+      <UniqueIdentifier>{A3C5D2E1-7B4A-46F2-9B7E-5F3C2D1A9B7C}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\EaglePatch.cpp">
@@ -25,14 +28,14 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\EaglePatch.h">
+    <ClInclude Include="include\EaglePatch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\Patches\Controller.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\Patches\Controller.h">
+      <Filter>Header Files\Patches</Filter>
     </ClInclude>
-    <ClInclude Include="src\Patches\SkipIntro.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="include\Patches\SkipIntro.h">
+      <Filter>Header Files\Patches</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
