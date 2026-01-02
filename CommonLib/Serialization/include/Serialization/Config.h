@@ -5,6 +5,7 @@
 #include "Adapters/NumericAdapters.h"
 #include "Adapters/StringAdapter.h"
 #include "Adapters/EnumAdapter.h"
+#include "Adapters/KeyBindAdapter.h"
 #include <vector>
 #include <string>
 
@@ -20,7 +21,7 @@ protected:
     const std::string m_Name;
     ConfigEntryBase(const std::string& name);
 public:
-    virtual void FromJSON(JSON& cfg) = 0;
+    virtual bool FromJSON(JSON& cfg) = 0;
     virtual void ToJSON(JSON& cfg) = 0;
 private:
     void RegisterWithContext();
@@ -46,9 +47,9 @@ public:
         , m_Value(initialValue)
     {}
     
-    virtual void FromJSON(JSON& jsonValue) override
+    virtual bool FromJSON(JSON& jsonValue) override
     {
-        Adapter(m_Value).FromJSON(jsonValue);
+        return Adapter(m_Value).FromJSON(jsonValue);
     }
     
     virtual void ToJSON(JSON& jsonValue) override
@@ -72,7 +73,7 @@ protected:
 
 public:
     void SectionToJSON(JSON& jsonOut);
-    void SectionFromJSON(JSON& jsonObject);
+    bool SectionFromJSON(JSON& jsonObject);
 
 private:
     friend ConfigEntryBase;

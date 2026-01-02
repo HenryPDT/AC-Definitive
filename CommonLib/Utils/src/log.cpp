@@ -19,7 +19,7 @@ namespace
 		wchar_t module_path[MAX_PATH];
 		GetModuleFileNameW(hModule, module_path, MAX_PATH);
 		std::filesystem::path dll_path = module_path;
-		return dll_path.parent_path() / "PluginLoader.log";
+		return dll_path.replace_extension(".log");
 	}
 }
 

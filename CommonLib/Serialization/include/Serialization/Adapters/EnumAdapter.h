@@ -11,7 +11,7 @@ class EnumAdapter_template : public JSONAdapter<EnumType, JSON::Class::String>
 {
 public:
     using JSONAdapter<EnumType, JSON::Class::String>::JSONAdapter;
-    
+
     bool FromJSON(JSON& obj)
     {
         if (!this->IsCorrectJSONType(obj))
@@ -25,7 +25,7 @@ public:
         this->source = *parsedValue;
         return true;
     }
-    
+
     JSON ToJSON()
     {
         return enum_reflection<EnumType>::GetString(this->source);
@@ -33,7 +33,36 @@ public:
 };
 
 template<typename EnumType>
+class NumericEnumAdapter_template : public JSONAdapter<EnumType, JSON::Class::Integral>
+{
+public:
+    using JSONAdapter<EnumType, JSON::Class::Integral>::JSONAdapter;
+
+    bool FromJSON(JSON& obj)
+    {
+        if (!this->IsCorrectJSONType(obj))
+        {
+            return false;
+        }
+        long long value = obj.ToInt();
+        this->source = static_cast<EnumType>(value);
+        return true;
+    }
+
+    JSON ToJSON()
+    {
+        return static_cast<long long>(this->source);
+    }
+};
+
+template<typename EnumType>
 EnumAdapter_template<EnumType> EnumAdapter(EnumType& source)
+{
+    return { source };
+}
+
+template<typename EnumType>
+NumericEnumAdapter_template<EnumType> NumericEnumAdapter(EnumType& source)
 {
     return { source };
 }

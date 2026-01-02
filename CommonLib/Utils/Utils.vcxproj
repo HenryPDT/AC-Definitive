@@ -59,7 +59,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)CommonLib\DearImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)CommonLib\Serialization\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -77,7 +77,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)CommonLib\DearImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)CommonLib\Serialization\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -90,10 +90,21 @@
   <ItemGroup>
     <ClCompile Include="src\crash_handler.cpp" />
     <ClCompile Include="src\log.cpp" />
+    <ClCompile Include="src\KeyBind.cpp" />
+    <ClCompile Include="src\ImGuiConfigUtils.cpp" />
+    <ClCompile Include="src\CpuAffinity.cpp" />
+    <ClCompile Include="src\ImGuiConsole.cpp" />
+    <ClCompile Include="src\PatternScanner.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\crash_handler.h" />
     <ClInclude Include="include\log.h" />
+    <ClInclude Include="include\ImGuiCTX.h" />
+    <ClInclude Include="include\KeyBind.h" />
+    <ClInclude Include="include\ImGuiConfigUtils.h" />
+    <ClInclude Include="include\CpuAffinity.h" />
+    <ClInclude Include="include\ImGuiConsole.h" />
+    <ClInclude Include="include\PatternScanner.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

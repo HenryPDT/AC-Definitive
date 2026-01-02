@@ -1,0 +1,22 @@
+    <ClInclude Include="include\ImGuiCTX.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\KeyBind.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ImGuiConfigUtils.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\PatternScanner.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClCompile Include="src\KeyBind.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ImGuiConfigUtils.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\PatternScanner.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+

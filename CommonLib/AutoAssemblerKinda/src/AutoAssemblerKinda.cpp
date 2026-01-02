@@ -439,6 +439,35 @@ std::optional<uintptr_t> AutoAssemblerCodeHolder_Base::RETURN_TO_RIGHT_AFTER_STO
 AutoAssemblerCodeHolder_Base::AutoAssemblerCodeHolder_Base()
     : m_ctx(std::make_unique<AssemblerContext>())
 {}
+#ifndef _WIN64
+// Static wrapper to handle register saving/restoring
+void __declspec(naked) CCodeInTheMiddle_Wrapper_x86()
+{
+    __asm {
+        // Stack on entry: [RetAddr] [ReceiverFunc]
+        pushfd                  // Save EFLAGS
+        pushad                  // Save General Purpose Registers
+        // Stack: [EDI...EAX] [EFLAGS] [RetAddr] [ReceiverFunc]
+        //        <-- ESP
+
+        mov ecx, esp            // Argument 1: Pointer to AllRegisters (which is current ESP)
+        
+        // Calculate address of ReceiverFunc
+        // pushad (32) + pushfd (4) + RetAddr (4) = 40 bytes offset
+        // But we are pushing argument next, so calculate before that or adjust
+        
+        push ecx                // Push AllRegisters* as argument
+        call [esp + 44]         // Call ReceiverFunc. (Offset 40 + 4 for the pushed arg)
+        add esp, 4              // Clean up argument
+
+        popad                   // Restore GPRs (possibly modified)
+        popfd                   // Restore EFLAGS
+        
+        ret 4                   // Return and pop ReceiverFunc argument (stdcall-like behavior for the wrapper call)
+    }
+}
+#endif
+
 void AutoAssemblerCodeHolder_Base::PresetScript_CCodeInTheMiddle(uintptr_t whereToInject, size_t howManyBytesStolen, CCodeInTheMiddleFunctionPtr_t receiverFunc, std::optional<uintptr_t> whereToReturn, bool isNeedToExecuteStolenBytesAfterwards)
 {
     std::stringstream ss;
@@ -507,29 +536,19 @@ void AutoAssemblerCodeHolder_Base::PresetScript_CCodeInTheMiddle(uintptr_t where
         "E8", RIP(ccode_flattened),         //  - call ccode_flattened
     };
 #else // _WIN32
-    // Create a label for the function address location
-    LABEL_NAMED(receiverFuncAddr, symbolsBaseName + "__receiverFuncAddr");
+
+    DEFINE_ADDR_NAMED(wrapperAddr, "CCodeInTheMiddle_Wrapper_x86", (uintptr_t)&CCodeInTheMiddle_Wrapper_x86);
+    DEFINE_ADDR_NAMED(receiverFuncAddr, symbolsBaseName + "__receiverFuncAddr", (uintptr_t)receiverFunc);
+    
     newmem = {
         PutLabel(ccode_flattened),
-        "9C",                       // pushfd - saves EFLAGS (4 bytes)
-        "60",                       // pushad - saves EDI, ESI, EBP, ESP, EBX, EDX, ECX, EAX (32 bytes)
-        // After pushfd+pushad, ESP points to saved EDI, which is the start of AllRegisters struct
-        // Stack layout: ESP+0=EDI, +4=ESI, +8=EBP, +12=ESP, +16=EBX, +20=EDX, +24=ECX, +28=EAX, +32=EFLAGS
-        // This matches the AllRegisters struct layout exactly
-        "8B EC",                    // mov ebp, esp ; Save original ESP (pointer to AllRegisters) in EBP (callee-saved)
-        "83 E4 F0",                 // and esp, -16 ; Align ESP to 16-byte boundary
-        "83 EC 0C",                 // sub esp, 12  ; Padding: so that after 'push ebp' (4 bytes), ESP is 16-byte aligned (ends in 0)
-        "55",                       // push ebp     ; push pointer to AllRegisters as argument
-        "FF 15", ABS(receiverFuncAddr, 4), // call dword ptr [receiverFuncAddr]
-        "8B E5",                    // mov esp, ebp ; Restore original ESP
-        "61",                       // popad - restores registers (including any modifications)
-        "9D",                       // popfd - restores flags
-        "C3",                       // ret
-    // receiverFunc address data (placed right after the ret):
-        PutLabel(receiverFuncAddr),
-        dd((unsigned long)receiverFunc),
+        // Push the receiver function address onto the stack
+        "68", ABS(receiverFuncAddr, 4), // push receiverFunc
+        // Call the static wrapper
+        "E8", RIP(wrapperAddr),         // call CCodeInTheMiddle_Wrapper_x86
+        
         PutLabel(cave_entrance),
-        "E8", RIP(ccode_flattened), // call ccode_flattened
+        "E8", RIP(ccode_flattened),     // call ccode_flattened
     };
 #endif
     if (isNeedToExecuteStolenBytesAfterwards)
@@ -568,4 +587,18 @@ void AutoAssemblerCodeHolder_Base::PresetScript_ReplaceFunctionAtItsStart(uintpt
         db(0xE9), RIP(targetFunc)
     };
 #endif
+}
+
+void AutoAssemblerCodeHolder_Base::PresetScript_InjectJump(uintptr_t whereToInject, uintptr_t targetAddr, size_t howManyBytesStolen)
+{
+    std::stringstream ss;
+    ss << std::hex << whereToInject;
+    std::string symbolsBaseName = "injectAt_" + ss.str();
+    DEFINE_ADDR_NAMED(injectAt, symbolsBaseName, whereToInject);
+    DEFINE_ADDR_NAMED(target, symbolsBaseName + "__target", targetAddr);
+
+    injectAt = {
+        db(0xE9), RIP(target),
+        nop(howManyBytesStolen > 5 ? howManyBytesStolen - 5 : 0)
+    };
 }

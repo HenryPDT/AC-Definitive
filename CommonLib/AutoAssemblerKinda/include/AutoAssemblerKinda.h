@@ -700,6 +700,8 @@ public:
         uintptr_t whereToInject, size_t howManyBytesToNOP);
     void PresetScript_ReplaceFunctionAtItsStart(
         uintptr_t whereToInject, void* Func);
+    void PresetScript_InjectJump(
+        uintptr_t whereToInject, uintptr_t targetAddr, size_t howManyBytesStolen = 5);
 };
 template<class HasAutoAssemblerCodeInConstructor>
 class AutoAssembleWrapper
@@ -755,3 +757,43 @@ private:
 };
 
 #define debug_GET_AA_SYMBOL(assemblerCtxReference, symbol) SymbolWithAnAddress* symbol = assemblerCtxReference.GetSymbol(#symbol);
+
+// --- Hook Utilities ---
+
+// Macro to define a static naked hook function and its return address variable
+// Usage:
+// DEFINE_HOOK(MyHookName, ReturnAddressVar) {
+//     __asm {
+//         // your asm code
+//         jmp [ReturnAddressVar]
+//     }
+// }
+//
+// In your Init function:
+// ReturnAddressVar = hookAddress + stolenBytes;
+// PresetScript_InjectJump(hookAddress, (uintptr_t)MyHookName, stolenBytes);
+
+#define DEFINE_HOOK(HookName, ReturnVarName) \
+    static uintptr_t ReturnVarName = 0; \
+    static void __declspec(naked) HookName()
+
+// Macro to define a global variable for use in ASM blocks (mimics globalalloc)
+// Usage: GLOBAL_VAR(float, myVar, 1.0f);
+// In ASM: __asm { fld [myVar] }
+#define GLOBAL_VAR(Type, Name, InitialValue) \
+    Type Name = InitialValue
+
+// Macro to simplify activating a hook
+#define ACTIVATE_HOOK(HookClass, ...) \
+    static AutoAssembleWrapper<HookClass> HookClass##_inst(__VA_ARGS__); \
+    HookClass##_inst.Activate()
+
+// Helper for simple data patches (replaces db/dd/dq in simple cases)
+template<typename T>
+void WriteData(uintptr_t address, T value) {
+    DWORD oldProtect;
+    VirtualProtect((void*)address, sizeof(T), PAGE_EXECUTE_READWRITE, &oldProtect);
+    *(T*)address = value;
+    VirtualProtect((void*)address, sizeof(T), oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), (void*)address, sizeof(T));
+}

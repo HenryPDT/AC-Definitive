@@ -48,19 +48,28 @@ void ConfigSection::SectionToJSON(JSON& jsonOut)
     }
 }
 
-void ConfigSection::SectionFromJSON(JSON& jsonObject)
+bool ConfigSection::SectionFromJSON(JSON& jsonObject)
 {
     if (jsonObject.JSONType() != JSON::Class::Object)
-        return;
+        return true; // Invalid structure implies dirty/rewrite needed
 
+    bool missingOrInvalid = false;
     for (auto& prop : m_Properties)
     {
         if (jsonObject.hasKey(prop->m_Name))
         {
             JSON& memberJSON = jsonObject[prop->m_Name];
-            prop->FromJSON(memberJSON);
+            if (!prop->FromJSON(memberJSON))
+            {
+                missingOrInvalid = true;
+            }
+        }
+        else
+        {
+            missingOrInvalid = true;
         }
     }
+    return missingOrInvalid;
 }
 
 }
