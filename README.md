@@ -21,34 +21,43 @@ The framework includes `BaseHook`, a low-level input wrapper that modernizes har
 *   **Virtual XInput:** Creates a virtual XInput device from connected controllers. This allows the game (via the EaglePatch plugin) to support PlayStation controllers natively without tools like DS4Windows or Steam Input.
 *   **Hotplugging (Backend):** Detects device connection/disconnection at the hardware level to update the virtual state seamlessly.
 
-### 2. EaglePatch Integration (Plugins)
-Ported from **Sergeanur's EaglePatch**, these plugins hook into the game engine to apply logic fixes and utilize the modern input provided by BaseHook.
+### 2. Window Management & Performance
+A completely rewritten windowing and graphics backend provides modern conveniences for these older titles.
+*   **Windowed Modes:** Force the game into **Borderless Fullscreen**, **Exclusive Fullscreen**, or standard **Windowed** modes.
+*   **Smart Resizing:** Choose between "Match Game Resolution" (resizes window to game) or "Scale Content" (scales game to fit window/desktop).
+*   **Framerate Limiter:** Integrated high-precision framerate limiter to cap FPS without external tools.
+*   **CPU Affinity Fix:** Automatically restricts the game to < 32 cores (or disables Core 0) to prevent crashes and stuttering on modern high-core count CPUs (Ryzen/Threadripper).
+
+### 3. EaglePatch Integration (Plugins)
+Ported from **Sergeanur's EaglePatch** and enhanced with dynamic scanning, these plugins apply game-specific logic fixes.
 
 **Input & Engine Fixes:**
-*   **XInput Injection:** Replaces the game's legacy input handling with a modern XInput implementation (fed by BaseHook), fixing incorrect trigger mappings and axis issues.
-*   **Simultaneous Input:** Allows Keyboard/Mouse and Gamepad to be used at the same time without the UI flickering or inputs getting locked.
-*   **Game Hotplugging:** Ensures the game logic recovers correctly if a controller is disconnected and reconnected.
-*   **Skip Intro Videos:** Bypasses startup splash screens.
+*   **XInput Injection:** Replaces the game's legacy input handling with a modern XInput implementation.
+*   **Simultaneous Input:** Hybrid input support allows Keyboard/Mouse and Gamepad to be used simultaneously.
+*   **Skip Intro:** Bypasses startup videos.
 
-**Game-Specific Graphics & Content Fixes:**
+**Game-Specific Features:**
 *   **AC1:**
     *   Fixes Multisampling (MSAA) on modern hardware.
     *   Fixes duplicate resolution entries in DX10 mode.
     *   Disables Telemetry/Bloat functions.
 *   **AC2:**
-    *   **Graphics:** Increases Shadow Map resolution to 4096 and maxes out draw distances for buildings and NPCs.
+    *   **FPS Unlock:** Removes the 60 FPS cap.
+    *   **Graphics:** Increases Shadow Map resolution to 4096 and maxes out draw distances.
     *   **Content:** Unlocks Uplay rewards (Auditore Crypt, Altair Robes, Extra Knives).
 
-### 3. In-Game Mod Menu & Console
-No more editing `.ini` files or restarting the game to toggle features.
-*   Press **INSERT** to toggle the menu.
-*   Toggle fixes, cheats, and modifications in real-time.
-*   Integrated Developer Console (Press **~ Tilde**).
+### 4. In-Game Mod Menu & Console
+No more editing `.ini` files manually. The new UI allows for real-time configuration.
+*   Press **INSERT** to toggle the centralized **Mod Menu**.
+*   **Settings Tab:** Configure Window modes, FPS limits, CPU affinity, and hotkeys.
+*   **Plugins Tab:** View loaded plugins and toggle specific game patches (e.g., Graphics, Cheats) on the fly.
+*   **Developer Console:** Press **~ (Tilde)** to view logs and debug info.
 
-### 4. For Developers: Modular Plugin System
+### 5. For Developers: Modular Architecture
+*   **Pattern Scanning:** Plugins use AOB scanning to locate addresses dynamically, improving compatibility across versions.
+*   **Shared Libraries:** `AC-RE` libraries provide shared game structures and version detection.
 *   **Automatic Hooking:** The loader handles hooking DirectX (DX9/10/11), DirectInput8, and WndProc.
-*   **Shared API:** Plugins share the same ImGui context and hooks, preventing conflicts.
-*   **AutoAssemblerKinda:** A C++ library for easy runtime assembly patching (similar to Cheat Engine's AutoAssembler).
+*   **AutoAssemblerKinda:** A C++ library for easy runtime assembly patching (supports JMP injection and code caves).
 
 ## Installation and File Structure
 
@@ -79,7 +88,7 @@ This framework requires [**Ultimate ASI Loader**](https://github.com/ThirteenAG/
 
 ## Credits
 
-*   [**Sergeanur**](https://github.com/Sergeanur/EaglePatch): Creator of the original **EaglePatch**. This project is a port and expansion of his work.
-*   [**NameTaken3125**](https://github.com/NameTaken3125/ACUFixes): Creator of **ACUFixes**. The plugin loader architecture, `AutoAssemblerKinda` library, and serialization utils are derived from his source code.
-*   [**rdbo**](https://github.com/rdbo/ImGui-DirectX-9-Kiero-Hook) / **Rebzzel** (kiero): For the DirectX hooking method and libraries used in BaseHook.
-*   **ocornut**: For [Dear ImGui](https://github.com/ocornut/imgui).
+*   [**Sergeanur**](https://github.com/Sergeanur/EaglePatch): Creator of the original **EaglePatch**.
+*   [**NameTaken3125**](https://github.com/NameTaken3125/ACUFixes): Creator of **ACUFixes**. Core architecture derived from his work.
+*   [**rdbo**](https://github.com/rdbo/ImGui-DirectX-9-Kiero-Hook) / **Rebzzel** (kiero): DirectX hooking libraries.
+*   **ocornut**: [Dear ImGui](https://github.com/ocornut/imgui).
