@@ -86,8 +86,6 @@ struct AxisRange {
         if (norm < -1.0f) norm = -1.0f;
         if (norm > 1.0f) norm = 1.0f;
 
-        // Deadzone (15%)
-        if (norm > -0.15f && norm < 0.15f) return 0.0f;
         return norm;
     }
 };
@@ -1744,19 +1742,20 @@ namespace BaseHook { namespace Hooks {
         std::lock_guard<std::mutex> lock(g_input_queue_mutex);
         ImGuiIO& io = ImGui::GetIO();
 
-        if (g_mouse_buffer.lX != 0 || g_mouse_buffer.lY != 0 || g_mouse_buffer.lZ != 0)
+        if (BaseHook::Data::bImGuiMouseButtonsFromDirectInput)
         {
-            io.MouseDelta.x += (float)g_mouse_buffer.lX;
-            io.MouseDelta.y += (float)g_mouse_buffer.lY;
-            io.MouseWheel += (float)g_mouse_buffer.lZ / 120.0f;
+            // Overlay mouse movement is always Win32/WndProc-driven.
+            // Only inject wheel + buttons from DirectInput when configured.
+            if (g_mouse_buffer.lZ != 0)
+            {
+                io.MouseWheel += (float)g_mouse_buffer.lZ / 120.0f;
 
-            g_mouse_buffer.lX = 0;
-            g_mouse_buffer.lY = 0;
-            g_mouse_buffer.lZ = 0;
+                g_mouse_buffer.lZ = 0;
+            }
+
+            for (int i = 0; i < 8; i++)
+                io.MouseDown[i] = (g_mouse_buffer.rgbButtons[i] & 0x80) != 0;
         }
-
-        for (int i = 0; i < 8; i++)
-            io.MouseDown[i] = (g_mouse_buffer.rgbButtons[i] & 0x80) != 0;
     }
 
     ApplyVirtualPadToImGui();

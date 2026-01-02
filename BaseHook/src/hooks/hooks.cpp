@@ -1,146 +1,214 @@
 #include "pch.h"
 #include "base.h"
+#include "WindowedMode.h"
+#include "hooks/D3DCreateHooks.h"
+#include "GameDetection.h"
+#include "RenderDetection.h"
 
 namespace BaseHook
 {
     namespace Hooks
     {
+        // Internal Helpers
+        void InstallWndProcHook();
+        void RestoreWndProc();
+
+        // Forward declarations of other hook files
         void InitDirectInput();
         void InitXInput();
+        void CleanupDirectInput();
 
-        namespace
+        static bool g_WindowHooksInstalled = false;
+
+        // --- Lifecycle Management ---
+
+        void InstallEarlyHooks(HMODULE hModule)
         {
-            const char* RenderTypeToString(kiero::RenderType::Enum type)
+            LOG_INFO("InstallEarlyHooks: Starting...");
+            
+            // Initialize MinHook
+            if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED)
             {
-                switch (type)
-                {
-                case kiero::RenderType::D3D9:   return "D3D9";
-                case kiero::RenderType::D3D10:  return "D3D10";
-                case kiero::RenderType::D3D11:  return "D3D11";
-                default:                        return "Unsupported";
-                }
+                LOG_ERROR("InstallEarlyHooks: MinHook Init Failed.");
+                return;
             }
 
-            struct WindowSearchContext {
-                HWND bestHandle = nullptr;
-                long maxArea = 0;
-            };
+            // Install Windowed Mode Hooks (User32 / D3D Creation)
+            // Always install hooks to ensure we catch CreateWindowEx and get the window handle early.
+            LOG_INFO("InstallEarlyHooks: Installing WindowedMode hooks...");
+            BaseHook::WindowedMode::InstallHooks();
+            g_WindowHooksInstalled = true;
+            LOG_INFO("InstallEarlyHooks: Done.");
+        }
 
-            BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam)
-            {
-                WindowSearchContext* context = (WindowSearchContext*)lParam;
+        void FinishInitialization()
+        {
+            if (Data::bGraphicsInitialized) return;
 
-                DWORD wndProcId;
-                GetWindowThreadProcessId(handle, &wndProcId);
+            // Check if hooks are bound (manually via D3DCreateHooks)
+            bool isD3D9Hooked = (Data::oEndScene != nullptr);
+            bool isD3D11Hooked = (Data::oPresent != nullptr); // DX10 uses same pointer variable usually or distinct?
+            // base.h: Present_t oPresent; used for DX10/11.
 
-                if (GetCurrentProcessId() != wndProcId)
-                    return TRUE;
-
-                // Ignore console windows
-                char className[256];
-                GetClassNameA(handle, className, sizeof(className));
-                if (strcmp(className, "ConsoleWindowClass") == 0) 
-                    return TRUE;
-
-                if (handle == GetConsoleWindow())
-                    return TRUE;
-
-                if (!IsWindowVisible(handle))
-                    return TRUE;
-
-                // Get Window Title for logging
-                char title[256];
-                GetWindowTextA(handle, title, sizeof(title));
-
-                RECT rect;
-                GetClientRect(handle, &rect);
-                long area = (rect.right - rect.left) * (rect.bottom - rect.top);
-
-                LOG_INFO("Found Window: Handle=%p, Class='%s', Title='%s', Area=%ld", handle, className, title, area);
-
-                if (area > context->maxArea) {
-                    context->maxArea = area;
-                    context->bestHandle = handle;
-                }
-
-                return TRUE; // Continue enumerating to find the biggest one
+            if (!isD3D9Hooked && !isD3D11Hooked) {
+                // Not ready yet. D3DCreateHooks will call us again when device is created.
+                LOG_INFO("FinishInitialization: Graphics hooks not yet bound. Waiting for Device Creation...");
+                return;
             }
 
-            HWND FindGameWindow()
-            {
-                WindowSearchContext context;
-                EnumWindows(EnumWindowsCallback, (LPARAM)&context);
-                Data::hWindow = context.bestHandle;
-                return Data::hWindow;
+            Data::bGraphicsInitialized = true;
+            LOG_INFO("FinishInitialization: Graphics Initialized.");
+        }
+
+        static BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam)
+        {
+            DWORD wndProcId;
+            GetWindowThreadProcessId(handle, &wndProcId);
+
+            if (GetCurrentProcessId() != wndProcId)
+                return TRUE;
+
+            if (!IsWindowVisible(handle)) {
+                // LOG_INFO("EnumWindows: Skipped hidden window %p", handle);
+                return TRUE;
             }
+
+            char className[256];
+            if (GetClassNameA(handle, className, sizeof(className)) == 0) return TRUE;
+            
+            // Simple heuristic for game window: has a non-zero area client region
+            RECT rect;
+            if (!GetClientRect(handle, &rect)) return TRUE;
+
+            int w = rect.right - rect.left;
+            int h = rect.bottom - rect.top;
+
+            LOG_INFO("EnumWindows: Examining window %p (Class=%s, Size=%dx%d)", handle, className, w, h);
+
+            if (strcmp(className, "ConsoleWindowClass") == 0) {
+                 LOG_INFO("  Skipped: ConsoleWindowClass");
+                 return TRUE;
+            }
+
+            if (w <= 32 || h <= 32) {
+                LOG_INFO("  Skipped: Too small");
+                return TRUE;
+            }
+
+            Data::hWindow = handle;
+            LOG_INFO("EnumWindows: Accepted window %p", handle);
+            return FALSE; // Stop enumeration
         }
 
         bool Init()
         {
-            // CRITICAL FIX: Initialize MinHook explicitly before creating any input hooks.
-            // Kiero initializes it too, but we need it earlier for input.
-            if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED)
-            {
+            LOG_INFO("Init: Starting...");
+            // Double check MinHook init (in case EarlyHooks wasn't called or failed)
+            if (MH_Initialize() != MH_OK && MH_Initialize() != MH_ERROR_ALREADY_INITIALIZED) {
                 LOG_ERROR("Failed to initialize MinHook.");
                 return false;
             }
 
-            // Ensure settings exist
-            if (!Data::pSettings) return false;
+            if (!Data::pSettings) {
+                LOG_ERROR("Init: Settings not found.");
+                return false;
+            }
 
-            // 1. Hook Inputs early
-            // Now safe to call because MinHook is initialized.
+            // Hook Inputs
+            LOG_INFO("Init: Hooking Inputs...");
             InitDirectInput();
             InitXInput();
 
-            // 2. Initialize Kiero
-            if (kiero::init(kiero::RenderType::Auto) != kiero::Status::Success)
+            // Determine Effective Render Type
+            // Centralized: WindowedMode::EarlyInit already resolved Auto (0) to a concrete version.
+            int effectiveDX = WindowedMode::g_State.targetDXVersion;
+            
+            // Final fallback if detection failed
+            if (effectiveDX == 0)
             {
-                LOG_ERROR("Kiero initialization failed.");
-                return false;
-            }
+                if (GetModuleHandleA("d3d11.dll") != NULL) effectiveDX = 11;
+                else if (GetModuleHandleA("d3d10.dll") != NULL) effectiveDX = 10;
+                else if (GetModuleHandleA("d3d9.dll") != NULL) effectiveDX = 9;
 
-            kiero::RenderType::Enum type = kiero::getRenderType();
-            LOG_INFO("Render Type: %s (%d)", RenderTypeToString(type), type);
-
-            // 3. Find Window
-            int attempts = 0;
-            while (FindGameWindow() == NULL)
-            {
-                Sleep(100);
-                if (++attempts > 100) { // 10 second timeout
-                    LOG_ERROR("Timeout waiting for game window.");
-                    return false;
+                if (effectiveDX != 0) {
+                    WindowedMode::g_State.targetDXVersion = effectiveDX;
                 }
             }
 
-            NotifyDirectInputWindow(Data::hWindow);
+            if (effectiveDX != 0)
+            {
+                LOG_INFO("Init: Effective DirectX Version: %d", effectiveDX);
+            }
+            else
+            {
+                LOG_INFO("Init: Effective DirectX Version: Auto (Failed to Detect)");
+            }
 
-            // 4. Bind Graphics Hooks
-            if (type == kiero::RenderType::D3D11) {
-                kiero::bind(8, (void**)&Data::oPresent, hkPresentDX11);
-                kiero::bind(13, (void**)&Data::oResizeBuffers, hkResizeBuffersDX11);
+            // Late-install D3D9 hooks (safe from Main Thread)
+            if (effectiveDX == 9) {
+                LOG_INFO("Init: Late-installing D3D9 hooks...");
+                BaseHook::WindowedMode::InstallD3D9HooksLate();
             }
-            else if (type == kiero::RenderType::D3D10) {
-                kiero::bind(8, (void**)&Data::oPresent, hkPresentDX10);
-                kiero::bind(13, (void**)&Data::oResizeBuffers, hkResizeBuffersDX10);
+            else if (effectiveDX == 10 || effectiveDX == 11) {
+                LOG_INFO("Init: Late-installing DXGI hooks...");
+                BaseHook::WindowedMode::InstallDXGIHooksLate();
             }
-            else if (type == kiero::RenderType::D3D9) {
-                kiero::bind(42, (void**)&Data::oEndScene, hkEndScene);
-                kiero::bind(16, (void**)&Data::oReset, hkReset);
+
+            // Init Kiero for rendering hooks
+            const char* dxVerStr = "Auto";
+            if (effectiveDX == 9) dxVerStr = "D3D9";
+            else if (effectiveDX == 10) dxVerStr = "D3D10";
+            else if (effectiveDX == 11) dxVerStr = "D3D11";
+            
+            LOG_INFO("Init: Render Type: %s (Using Direct VTable Hooks)", dxVerStr);
+
+            // Ensure Windowed Mode hooks are applied (idempotent)
+            BaseHook::WindowedMode::InstallHooks();
+
+            // If we didn't find a window during early hook phase, try to find it now
+            if (Data::hWindow == NULL)
+            {
+                LOG_INFO("Init: Data::hWindow is NULL, enumerating windows...");
+                EnumWindows(EnumWindowsCallback, 0);
+                if (Data::hWindow) {
+                    LOG_INFO("Late Injection: Found window %p", Data::hWindow);
+                    if (BaseHook::WindowedMode::ShouldHandle()) {
+                        BaseHook::WindowedMode::Apply(Data::hWindow);
+                    }
+                }
             }
             else {
-                LOG_ERROR("Unsupported render type.");
-                return false;
+                LOG_INFO("Init: Data::hWindow already set: %p", Data::hWindow);
             }
 
-            // 5. Hook WndProc last
+            // Always ensure WndProc is hooked (if window exists)
             if (Data::hWindow) {
-                 Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
-                 LOG_INFO("WndProc Hooked. Original: %p", Data::oWndProc);
+                InstallWndProcHook();
+            } else {
+                LOG_INFO("Init: Window not found yet. Deferred WndProc hook to CreateWindowEx.");
             }
 
+            LOG_INFO("Init: Basehook initialized successfully.");
             return true;
+        }
+        
+        void InstallWndProcHook()
+        {
+            if (!Data::hWindow) {
+                LOG_ERROR("InstallWndProcHook: Data::hWindow is NULL.");
+                return;
+            }
+
+            if (Data::oWndProc == nullptr) {
+                 LOG_INFO("InstallWndProcHook: Hooking WndProc for %p...", Data::hWindow);
+                 Data::oWndProc = (WndProc_t)SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::pSettings->m_WndProc);
+                 LOG_INFO("InstallWndProcHook: Original WndProc=%p", Data::oWndProc);
+            } else {
+                 LOG_INFO("InstallWndProcHook: Already hooked (%p).", Data::oWndProc);
+            }
+
+            NotifyDirectInputWindow(Data::hWindow);
+            FinishInitialization();
         }
 
         void RestoreWndProc()
@@ -148,19 +216,17 @@ namespace BaseHook
             if (Data::oWndProc && Data::hWindow)
             {
                 SetWindowLongPtr(Data::hWindow, GWLP_WNDPROC, (LONG_PTR)Data::oWndProc);
-                Data::oWndProc = nullptr; // Prevent double restore
+                Data::oWndProc = nullptr;
                 LOG_INFO("WndProc Restored.");
             }
         }
 
         void Shutdown()
         {
-            // Ensure WndProc is restored if Shutdown called directly
             RestoreWndProc();
 
             if (ImGui::GetCurrentContext())
             {
-                // Cleanup backend specific
                 auto type = kiero::getRenderType();
                 if (type == kiero::RenderType::D3D9) {
                     ImGui_ImplDX9_Shutdown();
@@ -180,10 +246,11 @@ namespace BaseHook
                 ImGui::DestroyContext();
             }
 
-            // Clean up internal input maps
             CleanupDirectInput();
-
-            // Unhook Graphics
+            
+            // Disable all hooks (since we bypassed kiero::shutdown logic)
+            MH_DisableHook(MH_ALL_HOOKS);
+            
             kiero::shutdown();
         }
     }

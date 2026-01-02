@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "base.h"
+#include "WindowedMode.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -16,15 +17,44 @@ namespace BaseHook
             if (Data::bIsDetached)
                 return CallOriginal(hWnd, uMsg, wParam, lParam);
 
-            // 1. Internal Hotkeys
+            // Scale mouse coordinates from Physical Window to Virtual Resolution (if applicable)
+            // This ensures ImGui and the Game receive coordinates matching the render resolution.
+            lParam = WindowedMode::ScaleMouseMessage(hWnd, uMsg, lParam);
+
+            // Maintain windowed mode state on activation/focus changes
+            if (uMsg == WM_ACTIVATE && LOWORD(wParam) != WA_INACTIVE)
+            {
+                if (WindowedMode::ShouldHandle())
+                {
+                    // Ensure styles are still correct when regaining focus
+                    WindowedMode::Apply(hWnd);
+                }
+                else
+                {
+                    // Request restoration of exclusive fullscreen if configured
+                    WindowedMode::RequestRestoreExclusiveFullscreen();
+                }
+            }
+
+            if (WindowedMode::ShouldHandle())
+            {
+                switch (uMsg)
+                {
+                case WM_SIZE:
+                    // Spoof the size to match Virtual Resolution.
+                    // This ensures the game "sees" the constant resolution we want it to run at,
+                    // regardless of the actual physical window dimensions (e.g. if resizing is allowed).
+                    if (WindowedMode::g_State.virtualWidth > 0 && WindowedMode::g_State.virtualHeight > 0)
+                    {
+                         lParam = MAKELPARAM(WindowedMode::g_State.virtualWidth, WindowedMode::g_State.virtualHeight);
+                    }
+                    break;
+                }
+            }
             if (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN)
             {
-                if (wParam == Keys::ToggleMenu)
-                {
-                    Data::bShowMenu = !Data::bShowMenu;
-                    Data::bBlockInput = Data::bShowMenu;
-                }
-                else if (wParam == Keys::DetachDll)
+                // Menu toggle is handled by PluginLoader (configurable). BaseHook should not own UI hotkeys.
+                if (wParam == Keys::DetachDll)
                 {
                     Detach();
                     return CallOriginal(hWnd, uMsg, wParam, lParam);
@@ -36,44 +66,15 @@ namespace BaseHook
                 Hooks::HandleDeviceChange(wParam, lParam);
             }
 
+            if (uMsg == WM_DISPLAYCHANGE)
+            {
+                WindowedMode::g_State.needMonitorRefresh = true;
+            }
+
             if (Data::bIsInitialized && !Data::bIsDetached)
             {
-                // 2. Always feed ImGui
+                // Plumbing: feed ImGui's Win32 backend so it can keep internal state coherent.
                 ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
-
-                // 3. Input Blocking Logic
-                // If bBlockInput is TRUE (Menu Open), we aggressively block game input.
-                // If bBlockInput is FALSE, we only block if ImGui specifically wants it.
-                bool shouldBlock = Data::bBlockInput;
-
-                if (!shouldBlock)
-                {
-                    ImGuiIO& io = ImGui::GetIO();
-                    if (io.WantCaptureKeyboard && (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_CHAR || uMsg == WM_SYSKEYDOWN))
-                        shouldBlock = true;
-                    if (io.WantCaptureMouse && (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST))
-                        shouldBlock = true;
-                }
-
-                if (shouldBlock)
-                {
-                    switch (uMsg)
-                    {
-                    case WM_SYSKEYDOWN:
-                    case WM_SYSKEYUP:
-                        if (wParam == VK_RETURN && (lParam & (1 << 29))) return CallOriginal(hWnd, uMsg, wParam, lParam); // Alt+Enter
-                    case WM_KEYDOWN: case WM_KEYUP:
-                    case WM_CHAR: case WM_IME_CHAR:
-                    case WM_MOUSEMOVE:
-                    case WM_LBUTTONDOWN: case WM_LBUTTONUP:
-                    case WM_RBUTTONDOWN: case WM_RBUTTONUP:
-                    case WM_MBUTTONDOWN: case WM_MBUTTONUP:
-                    case WM_XBUTTONDOWN: case WM_XBUTTONUP:
-                    case WM_MOUSEWHEEL: case WM_MOUSEHWHEEL:
-                    case WM_INPUT: // Block Raw Input too
-                        return 1; // Swallow message
-                    }
-                }
             }
 
             return CallOriginal(hWnd, uMsg, wParam, lParam);

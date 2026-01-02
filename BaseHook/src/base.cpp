@@ -13,21 +13,38 @@ namespace BaseHook
         std::atomic<bool> bIsDetached = false;
         bool              bBlockInput = false;
         std::atomic<bool> bIsRendering = false;
+        bool              bGraphicsInitialized = false;
         bool              bFixDirectInput = true;
+        bool              bImGuiMouseButtonsFromDirectInput = false;
         Settings*         pSettings = nullptr;
         WndProc_t         oWndProc = nullptr;
+
+        // Original User32 Pointers
+        FARPROC oGetSystemMetrics = nullptr;
+        FARPROC oAdjustWindowRectEx = nullptr;
+        FARPROC oGetClientRect = nullptr;
+        FARPROC oGetWindowRect = nullptr;
+        FARPROC oClientToScreen = nullptr;
+        FARPROC oScreenToClient = nullptr;
+        FARPROC oGetCursorPos = nullptr;
 
         thread_local bool               bCallingImGui = false;
         std::atomic<unsigned long long> lastXInputTime = 0;
 
         // DX9
-        IDirect3DDevice9* pDevice = NULL;
+        IDirect3DDevice9* pDevice = nullptr;
         EndScene_t        oEndScene = nullptr;
         Reset_t           oReset = nullptr;
+        ResetEx_t         oResetEx = nullptr;
+        Present9_t        oPresent9 = nullptr;
+        TestCooperativeLevel_t oTestCooperativeLevel = nullptr;
+        std::atomic<FakeResetState> g_fakeResetState = FakeResetState::Clear;
 
         // DX11/10 (DXGI)
+        IDXGISwapChain*   pSwapChain = nullptr;
         Present_t         oPresent = nullptr;
         ResizeBuffers_t   oResizeBuffers = nullptr;
+        ResizeTarget_t    oResizeTarget = nullptr;
         ID3D11Device*           pDevice11 = nullptr;
         ID3D11DeviceContext*    pContext11 = nullptr;
         ID3D11RenderTargetView* pMainRenderTargetView11 = nullptr;
@@ -39,7 +56,6 @@ namespace BaseHook
 
     namespace Keys
     {
-        UINT ToggleMenu = VK_INSERT;
         UINT DetachDll = VK_END;
     }
 
@@ -131,10 +147,15 @@ namespace BaseHook
         // Use settings for IniFilename
         io.IniFilename = (Data::pSettings && Data::pSettings->m_bSaveImGuiIni) ? "imgui.ini" : NULL;
         
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_DockingEnable;
         io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
         LoadSystemFonts();
         
         ImGui::StyleColorsDark();
+
+        // Tweak Docking Style
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowRounding = 0.0f; // Look better when docked
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f; // Opaque windows
     }
 }
