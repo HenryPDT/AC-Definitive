@@ -159,9 +159,32 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="include\GameVersion.h" />
+    <ClInclude Include="include\Core\GameVersion.h" />
+    <ClInclude Include="include\Core\BasicTypes.h" />
+    <ClInclude Include="include\Core\Constants.h" />
     <ClInclude Include="include\Gear\Memory.h" />
     <ClInclude Include="include\Scimitar\Pad.h" />
+    <ClInclude Include="include\Game\BhvAssassin.h" />
+    <ClInclude Include="include\Game\Camera.h" />
+    <ClInclude Include="include\Game\CharacterAI.h" />
+    <ClInclude Include="include\Game\Entity.h" />
+    <ClInclude Include="include\Game\Inventory.h" />
+    <ClInclude Include="include\Game\PlayerData.h" />
+    <ClInclude Include="include\Game\SharedData.h" />
+    <ClInclude Include="include\Game\Singletons.h" />
+    <ClInclude Include="include\Game\Structs.h" />
+    <ClInclude Include="include\Game\World.h" />
+    <ClInclude Include="include\Game\Components\BipedComponent.h" />
+    <ClInclude Include="include\Game\Managers\MapManager.h" />
+    <ClInclude Include="include\Game\Managers\MissionTimer.h" />
+    <ClInclude Include="include\Game\Managers\ProgressionManager.h" />
+    <ClInclude Include="include\Game\Managers\TimeOfDayManager.h" />
+    <ClInclude Include="include\Game\Enums\ItemIDs.h" />
+    <ClInclude Include="include\Core\GameRoots.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Core\GameRoots.cpp" />
+    <ClCompile Include="src\Game\Singletons.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

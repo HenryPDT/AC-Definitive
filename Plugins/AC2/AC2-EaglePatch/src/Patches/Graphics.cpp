@@ -82,13 +82,13 @@ namespace AC2EaglePatch
             // ShadowMap: C7 41 20 00 04 00 00 5D
             auto shadowMap = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "C7 41 20 00 04 00 00 5D");
             if (!shadowMap) return false;
-            sAddresses::ShadowMap = shadowMap.address + 3;
+            sAddresses::ShadowMap = shadowMap.address + 0x03;
 
             // Cloth: E8 28 F4 FF FF 85
             auto cloth = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "E8 28 F4 FF FF 85");
             if (!cloth) return false;
             sAddresses::Cloth = cloth.address;
-            Cloth_Return = cloth.address + 5;
+            Cloth_Return = cloth.address + 0x05;
 
             // LodLevel: 90 0F BE D1 F3 0F 10 04 95 ?? ?? 07 02
             auto lodLevel = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "90 0F BE D1 F3 0F 10 04 95 ?? ?? 07 02");
@@ -105,7 +105,7 @@ namespace AC2EaglePatch
             auto checkChar = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "8A 4B 28 8B 7C 83 14");
             if (!checkChar) return false;
             sAddresses::CheckChar = checkChar.address;
-            sAddresses::CheckCharOut = checkChar.address + 7;
+            sAddresses::CheckCharOut = checkChar.address + 0x07;
             CheckIsCharacter_Return = sAddresses::CheckCharOut;
 
             return true;
@@ -138,7 +138,7 @@ namespace AC2EaglePatch
             PresetScript_InjectJump(forceLod0, (uintptr_t)&ForceLod0_Hook);
 
             CheckIsCharacter_Return = checkCharJumpOut;
-            PresetScript_InjectJump(checkChar, (uintptr_t)&CheckIsCharacter_Hook, 7);
+            PresetScript_InjectJump(checkChar, (uintptr_t)&CheckIsCharacter_Hook, 0x07);
 
             // 3. Force Maximum LOD Level from Distance calculation
             PresetScript_InjectJump(lodLevelCalc, lodLevelCalc + 0x44);

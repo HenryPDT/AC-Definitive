@@ -59,7 +59,7 @@ namespace AC1EaglePatch
     // Hook Wrapper
     DEFINE_HOOK(AddXenonJoy_HookFunction, AddXenonJoy_Return) {
         __asm {
-            mov eax, [eax + 4]
+            mov eax, [eax + 0x04]
             mov [pPad], eax
             pushad
             pushfd
@@ -106,7 +106,7 @@ namespace AC1EaglePatch
             if (!result4) return false;
             
             // Offset -0x06: mov ecx, [_descriptor_var] (Opcode 8B 0D + Address)
-            sAddresses::_descriptor_var = (uint32_t*)result4.Dereference(-0x06 + 2).address;
+            sAddresses::_descriptor_var = (uint32_t*)result4.Dereference(-0x06 + 0x02).address;
 
             // Offset 0x08: call ac_getNewDescriptor (Relative Call)
             ac_getNewDescriptor = result4.Offset(0x08).ResolveRelative().As<t_ac_getNewDescriptor>();

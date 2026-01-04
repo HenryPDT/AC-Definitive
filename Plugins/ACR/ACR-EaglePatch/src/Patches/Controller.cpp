@@ -63,7 +63,7 @@ namespace ACREaglePatch
     // Hook Wrapper
     DEFINE_HOOK(AddXenonJoy_HookFunction, AddXenonJoy_Return) {
         __asm {
-            mov eax, [eax + 4]
+            mov eax, [eax + 0x04]
             mov [pPad], eax
             pushad
             pushfd
@@ -110,13 +110,13 @@ namespace ACREaglePatch
             if (!result4) return false;
             
             // Offset -0x06: mov ecx, [_descriptor_var] (Opcode 8B 0D + Address)
-            sAddresses::_descriptor_var = (uint32_t*)result4.Dereference(-0x06 + 2).address;
+            sAddresses::_descriptor_var = (uint32_t*)result4.Dereference(-0x06 + 0x02).address;
 
             // Offset 0x08: call ac_getNewDescriptor (Relative Call)
             ac_getNewDescriptor = result4.Offset(0x08).ResolveRelative().As<t_ac_getNewDescriptor>();
 
             // Offset 0x0D: mov edx, [pRef] (Opcode 8B 15 + Address)
-            ACR::Gear::MemHook::pRef = (ACR::Gear::MemHook***)result4.Dereference(0x0D + 2).address;
+            ACR::Gear::MemHook::pRef = (ACR::Gear::MemHook***)result4.Dereference(0x0D + 0x02).address;
 
             // Offset 0x42: call PadXenon_ctor (Relative Call)
             sAddresses::PadXenon_ctor = result4.Offset(0x42).ResolveRelative().address;
@@ -125,7 +125,7 @@ namespace ACREaglePatch
             sAddresses::PadProxyPC_AddPad = result4.Offset(0x7B).ResolveRelative().address;
 
             // Offset 0x88: mov ecx, [_delete_class] (Opcode 8B 0D + Address)
-            sAddresses::_delete_class = (void**)result4.Dereference(0x88 + 2).address;
+            sAddresses::_delete_class = (void**)result4.Dereference(0x88 + 0x02).address;
 
             // Offset 0x8F: call ac_getDeleteDescriptor (Relative Call)
             ac_getDeleteDescriptor = result4.Offset(0x8F).ResolveRelative().As<t_ac_getDeleteDescriptor>();

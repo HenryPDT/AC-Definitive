@@ -8,7 +8,7 @@
 namespace Utils
 {
     // --- Helper for Safe Memory Access ---
-    static bool IsSafeRead(const void* ptr, size_t size)
+    bool IsSafeRead(const void* ptr, size_t size)
     {
         if (!ptr) return false;
         MEMORY_BASIC_INFORMATION mbi = { 0 };
@@ -58,16 +58,78 @@ namespace Utils
         
         uintptr_t current = address;
         for (size_t i = 0; i < offsets.size(); ++i) {
+            // In AC2 pointer chains (and most CE chains), the logic is:
+            // NextPtr = *(CurrentPtr + Offset)
+            // So we add the offset to the current base address, THEN dereference.
+            current += offsets[i];
+
             if (!IsSafeRead((void*)current, sizeof(uintptr_t))) return { 0, false };
             
             // Dereference
             current = *(uintptr_t*)current;
             if (current == 0) return { 0, false };
-
-            // Add offset
-            current += offsets[i];
         }
         return { current, true };
+    }
+
+    static bool IsAbsoluteModRM(uint8_t modrm) {
+        // In 32-bit: Mod=00 (bits 7-6) and R/M=101 (bits 2-0) indicates a 32-bit displacement (absolute address).
+        // Bits 5-3 represent the register (0-7), which we ignore.
+        return (modrm & 0xC7) == 0x05; 
+    }
+
+    ScanResult ScanResult::ExtractAbsoluteAddress(intptr_t instructionOffset) const {
+        if (!found) return *this;
+
+        uintptr_t instrAddr = address + instructionOffset;
+        if (!IsSafeRead((void*)instrAddr, 10)) return { 0, false }; // Max instr size is ~15, 10 is safe for these cases
+
+        const uint8_t* pInstr = reinterpret_cast<const uint8_t*>(instrAddr);
+        uintptr_t extracted = 0;
+
+        switch (pInstr[0]) {
+            case 0xA1: // MOV EAX, [disp32]
+            case 0xA3: // MOV [disp32], EAX
+                extracted = *reinterpret_cast<const uint32_t*>(pInstr + 1);
+                break;
+
+            case 0x8B: // MOV reg, [disp32]
+            case 0x89: // MOV [disp32], reg
+            case 0x8D: // LEA reg, [disp32]
+                if (IsAbsoluteModRM(pInstr[1])) {
+                    extracted = *reinterpret_cast<const uint32_t*>(pInstr + 2);
+                }
+                break;
+
+            case 0x0F: // Multi-byte opcodes
+                if (pInstr[1] == 0x10 || pInstr[1] == 0x11 || // MOVUPS / MOVSS (no prefix)
+                    pInstr[1] == 0x28 || pInstr[1] == 0x29 || // MOVAPS
+                    pInstr[1] == 0xB6 || pInstr[1] == 0xB7)   // MOVZX
+                {
+                    if (IsAbsoluteModRM(pInstr[2])) {
+                        extracted = *reinterpret_cast<const uint32_t*>(pInstr + 3);
+                    }
+                }
+                break;
+
+            case 0xF3: // SSE Prefix (e.g. MOVSS)
+                if (pInstr[1] == 0x0F && (pInstr[2] == 0x10 || pInstr[2] == 0x11)) {
+                    if (IsAbsoluteModRM(pInstr[3])) {
+                        extracted = *reinterpret_cast<const uint32_t*>(pInstr + 4);
+                    }
+                }
+                break;
+
+            default:
+                LOG_ERROR("[PatternScanner] Unsupported opcode 0x%02X for absolute address extraction at 0x%p", pInstr[0], (void*)instrAddr);
+                return { 0, false };
+        }
+
+        if (extracted != 0) return { extracted, true };
+
+        LOG_ERROR("[PatternScanner] Failed to extract absolute address from instruction at 0x%p (Opcode: 0x%02X, ModRM: 0x%02X)", 
+            (void*)instrAddr, pInstr[0], pInstr[1]);
+        return { 0, false };
     }
 
     ScanResult ScanResult::ScanRelative(std::string_view signature, intptr_t range) const {
@@ -341,5 +403,10 @@ namespace Utils
     ScanResult PatternScanner::ScanRange(const uint8_t* start, size_t size, std::string_view signature)
     {
         return ScanInternal(start, size, ParseSignature(signature));
+    }
+
+    ScanResult PatternScanner::FromAddress(uintptr_t address)
+    {
+        return { address, address != 0 };
     }
 }
