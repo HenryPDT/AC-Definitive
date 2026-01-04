@@ -3,6 +3,7 @@
 #include <AutoAssemblerKinda.h>
 #include <PatternScanner.h>
 #include <memory>
+#include "log.h"
 
 namespace AC2EaglePatch
 {
@@ -170,7 +171,7 @@ namespace AC2EaglePatch
             s_DDHooks->Activate();
         }
 
-        if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Graphics fixes initialized.");
+        LOG_INFO("[EaglePatch] Graphics fixes initialized.");
     }
 
     void SetShadowMapResolution(bool enable)

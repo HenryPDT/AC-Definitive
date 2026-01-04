@@ -1,6 +1,7 @@
 #include "EaglePatch.h"
 #include <AutoAssemblerKinda.h>
 #include <PatternScanner.h>
+#include "log.h"
 
 namespace AC1EaglePatch
 {
@@ -21,8 +22,9 @@ namespace AC1EaglePatch
         {
             static AutoAssembleWrapper<TelemetryHook> hook(result.As<uintptr_t>());
             hook.Activate();
-            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Telemetry patch applied.");
+            LOG_INFO("[EaglePatch] Telemetry patch applied.");
         }
-        else if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Telemetry: Pattern NOT found!");
+        else
+            LOG_INFO("[EaglePatch] Telemetry: Pattern NOT found!");
     }
 }

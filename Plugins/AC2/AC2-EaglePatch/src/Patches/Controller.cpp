@@ -3,6 +3,7 @@
 #include <AutoAssemblerKinda.h>
 #include <PatternScanner.h>
 #include <cstring>
+#include "log.h"
 
 using namespace Utils;
 
@@ -185,7 +186,7 @@ namespace AC2EaglePatch
 
             // We add it, but we will manually manage its updates in the proxy hook to control the mapping
             if (pPad->AddPad(padXenon, scimitar::Pad::PadType::XenonPad, L"XInput Controller 1", 5, 5)) {
-                if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] XInput Controller successfully injected.");
+                LOG_INFO("[EaglePatch] XInput Controller successfully injected.");
             } else {
                 // Failed to add pad, cleanup memory to prevent leak
                 ac_delete_wrapper(padXenon, nullptr, nullptr);
@@ -347,7 +348,7 @@ namespace AC2EaglePatch
         static AutoAssembleWrapper<PadProxyUpdateHook> hook2;
         hook2.Activate();
         
-        if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Controller patches applied.");
+        LOG_INFO("[EaglePatch] Controller patches applied.");
     }
 
     void UpdateKeyboardLayout(int keyboardLayout)

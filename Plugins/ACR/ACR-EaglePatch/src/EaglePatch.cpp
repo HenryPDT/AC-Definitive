@@ -7,6 +7,7 @@
 #include <PluginConfig.h>
 #include <CpuAffinity.h>
 #include <filesystem>
+#include "log.h"
 
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
@@ -23,7 +24,11 @@ public:
     void OnPluginInit(const PluginLoaderInterface& loader_interface) override
     {
         g_loader_ref = &loader_interface;
-        g_loader_ref->LogToFile("[ACR EaglePatch] Initializing...");
+        
+        // Configure logging
+        Log::InitSink(g_loader_ref->LogToConsole);
+
+        LOG_INFO("[ACR EaglePatch] Initializing...");
 
         uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
         auto version = ACR::DetectVersion(baseAddr);
@@ -45,7 +50,7 @@ public:
             }
         }
         else
-            g_loader_ref->LogToConsole("[ACR EaglePatch] Unknown Game Version!");
+            LOG_INFO("[ACR EaglePatch] Unknown Game Version!");
     }
 
     void OnGuiRender() override
@@ -85,8 +90,8 @@ public:
         {
             Serialization::JSON outJson;
             g_config.SectionToJSON(outJson);
-            if (Serialization::Utils::SaveJSONToFile(outJson, g_configPath) && g_loader_ref)
-                g_loader_ref->LogToConsole("[ACR EaglePatch] Config saved.");
+            if (Serialization::Utils::SaveJSONToFile(outJson, g_configPath))
+                LOG_INFO("[ACR EaglePatch] Config saved.");
         }
         ImGui::TextDisabled("Note: 'Requires Restart' settings do not apply instantly.");
     }

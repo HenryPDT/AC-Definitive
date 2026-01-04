@@ -1,6 +1,7 @@
 #include "EaglePatch.h"
 #include <AutoAssemblerKinda.h>
 #include <PatternScanner.h>
+#include "log.h"
 
 namespace ACREaglePatch
 {
@@ -21,8 +22,9 @@ namespace ACREaglePatch
         {
             static AutoAssembleWrapper<SkipIntroHook> hook(skipAddr.As<uintptr_t>());
             hook.Activate();
-            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Skip Intro patch applied.");
+            LOG_INFO("[EaglePatch] Skip Intro patch applied.");
         }
-        else if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] SkipIntro: Pattern NOT found!");
+        else
+            LOG_INFO("[EaglePatch] SkipIntro: Pattern NOT found!");
     }
 }

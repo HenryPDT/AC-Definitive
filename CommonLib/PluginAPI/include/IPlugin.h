@@ -62,7 +62,6 @@ public:
     void (*RequestUnloadPlugin)(HMODULE pluginHandle) = nullptr;
     Game (*GetCurrentGame)() = nullptr;
     void (*LogToConsole)(const char* text) = nullptr;
-    void (*LogToFile)(const char* fmt, ...) = nullptr;
     ImGuiContext* m_ImGuiContext = nullptr;
     ImGuiContext* (*GetImGuiContext)() = nullptr;
     void* (*GetPluginInterface)(const char* pluginName) = nullptr;

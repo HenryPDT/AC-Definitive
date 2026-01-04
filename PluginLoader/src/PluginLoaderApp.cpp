@@ -385,7 +385,6 @@ void PluginLoaderApp::Init()
     LOG_INFO("Plugin Loader Attached.");
 
     m_loaderInterface.GetCurrentGame = GetCurrentGame_Impl;
-    m_loaderInterface.LogToFile = Log::Write;
     m_loaderInterface.LogToConsole = LogUnified;
     m_loaderInterface.RequestUnloadPlugin = PluginLoaderInterface_RequestUnload;
     m_loaderInterface.GetImGuiContext = GetImGuiContext_Impl;

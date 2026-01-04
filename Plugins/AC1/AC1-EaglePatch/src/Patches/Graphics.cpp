@@ -5,6 +5,7 @@
 #include <dxgi.h>
 #include <vector>
 #include <cstring>
+#include "log.h"
 
 using namespace Utils;
 
@@ -231,7 +232,7 @@ namespace AC1EaglePatch
             static AutoAssembleWrapper<DX10GetDisplayModesHook> hookPatch(sAddresses::DX10_Hook);
             hookPatch.Activate();
 
-            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Graphics fixes applied (DX10).");
+            LOG_INFO("[EaglePatch] Graphics fixes applied (DX10).");
         }
     }
 }

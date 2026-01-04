@@ -2,6 +2,7 @@
 #include "UplayBonus.h"
 #include <AutoAssemblerKinda.h>
 #include <PatternScanner.h>
+#include "log.h"
 
 
 namespace AC2EaglePatch
@@ -61,11 +62,11 @@ namespace AC2EaglePatch
             static AutoAssembleWrapper<UplayBonusHook> hook(sAddresses::Hook, sAddresses::EndClass);
             hook.Activate();
 
-            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] Uplay Bonuses enabled.");
+            LOG_INFO("[EaglePatch] Uplay Bonuses enabled.");
         }
         else
         {
-            if (g_loader_ref) g_loader_ref->LogToConsole("[EaglePatch] UplayBonus: Pattern NOT found!");
+            LOG_INFO("[EaglePatch] UplayBonus: Pattern NOT found!");
         }
     }
 }

@@ -2,6 +2,7 @@
 #include <AutoAssemblerKinda.h>
 #include <PatternScanner.h>
 #include <memory>
+#include "log.h"
 
 namespace AC2EaglePatch
 {
@@ -35,7 +36,7 @@ namespace AC2EaglePatch
     {
         auto pattern = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "83 F8 10 73 10");
         if (!pattern) {
-             if (g_loader_ref) g_loader_ref->LogToConsole("[AC2 EaglePatch] FPS Unlock pattern not found!");
+             LOG_INFO("[AC2 EaglePatch] FPS Unlock pattern not found!");
              return;
         }
 
@@ -52,7 +53,7 @@ namespace AC2EaglePatch
         if (enable)
             s_FPSUnlockPatch->Activate();
 
-        if (g_loader_ref) g_loader_ref->LogToConsole("[AC2 EaglePatch] FPS Unlock initialized.");
+        LOG_INFO("[AC2 EaglePatch] FPS Unlock initialized.");
     }
 
     void SetFPSUnlock(bool enable)

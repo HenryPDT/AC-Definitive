@@ -1,6 +1,7 @@
 #include <windows.h>
 #include "IPlugin.h"
 #include "imgui.h"
+#include "log.h"
 
 namespace
 {
@@ -17,7 +18,10 @@ public:
     void OnPluginInit(const PluginLoaderInterface& loader_interface) override
     {
         g_loader = &loader_interface;
-        g_loader->LogToFile("[ACB] Plugin Initialized!");
+
+        Log::InitSink(g_loader->LogToConsole);
+
+        LOG_INFO("[ACB] Plugin Initialized!");
     }
 
     void OnGuiRender() override
