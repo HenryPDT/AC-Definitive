@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <windows.h>
 #include <Serialization/Config.h>
-#include <GameVersion.h>
+#include <Core/GameVersion.h>
 
 // Global reference to the loader interface
 extern const PluginLoaderInterface* g_loader_ref;
