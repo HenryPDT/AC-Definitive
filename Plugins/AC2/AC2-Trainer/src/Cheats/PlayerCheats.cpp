@@ -15,86 +15,100 @@ extern Trainer::Configuration g_config;
 
 void PlayerCheats::DrawUI()
 {
+    // Safety check - if not in game, don't try to read pointers that might be invalid/changing
+    if (AC2::IsInWhiteRoom())
+    {
+        ImGui::TextDisabled("Unavailable while loading/in white room");
+        return;
+    }
+
     DrawPlayerStatus();
 }
 
 void PlayerCheats::DrawPlayerStatus()
 {
-    auto* health = AC2::GetPlayerHealth();
-    int32_t currHealth = 0, maxHealth = 0, armorDmg = 0;
-
-    if (health)
+    // Health & Cheats Section
+    if (ImGui::CollapsingHeader("Health & Cheats", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        currHealth = health->m_CurrentHealth;
-        maxHealth = health->m_MaxHealth;
-        armorDmg = health->m_ArmorDamage;
-    }
-
-    // Health Section
-    if (health)
-    {
-        ImGui::Text("Health: %d / %d", currHealth, maxHealth);
-        ImGui::Text("Armor Damage: %d", armorDmg);
-    }
-    else
-    {
-        ImGui::TextDisabled("Health pointer not found.");
-    }
-
-    ImGui::Checkbox("God Mode", &g_config.GodMode.get());
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sets internal God Mode flag (0x81).");
-
-    ImGui::Checkbox("Lock Consumables (Infinite Items)", &g_config.InfiniteItems.get());
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locks inventory items (including Knives) to max.");
-
-    ImGui::Checkbox("Ignore Fall Damage", &g_config.IgnoreFallDamage.get());
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Prevents death from falling (Refills Health + Resets Armor Damage).");
-
-    // Other Status
-    ImGui::Separator();
-    ImGui::TextDisabled("-- Status --");
-    
-    ImGui::Checkbox("Invisible", &g_config.Invisible.get());
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enemies will not detect you.");
-
-    ImGui::Checkbox("Disable Notoriety", &g_config.DisableNotoriety.get());
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locks Notoriety to zero.");
-
-    // Notoriety Value - use captured pNotoriety pointer from hook
-    // CE stores notoriety at [pNotoriety+0x0C]
-    void* pNotoriety = Hooks::GetNotorietyPointer();
-    if (pNotoriety && !g_config.DisableNotoriety)
-    {
-        float* pNotorietyValue = reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pNotoriety) + 0x0C);
-        float notoriety = *pNotorietyValue;
-        if (ImGui::SliderFloat("Notoriety Value (0.0 - 1.0)", &notoriety, 0.0f, 1.0f, "%.2f"))
+        auto* health = AC2::GetPlayerHealth();
+        
+        if (health)
         {
-            *pNotorietyValue = notoriety;
+            ImGui::Text("Health: %d / %d", health->m_CurrentHealth, health->m_MaxHealth);
+            ImGui::Text("Armor Damage: %d", health->m_ArmorDamage);
         }
+        else
+        {
+            ImGui::TextDisabled("Health pointer not found.");
+        }
+
+        ImGui::Spacing();
+        
+        ImGui::Checkbox("God Mode", &g_config.GodMode.get());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sets internal God Mode flag (0x81).");
+
+        ImGui::Checkbox("Infinite Items", &g_config.InfiniteItems.get());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locks consumables (including Knives) to max.");
+
+        ImGui::Checkbox("Ignore Fall Damage", &g_config.IgnoreFallDamage.get());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Prevents death from falling.");
     }
-    else if (!pNotoriety)
+
+    // Status Section
+    if (ImGui::CollapsingHeader("Status Effects", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::TextDisabled("Notoriety pointer not captured yet.");
+        ImGui::Checkbox("Invisible", &g_config.Invisible.get());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enemies will not detect you.");
+
+        ImGui::Checkbox("Disable Notoriety", &g_config.DisableNotoriety.get());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locks Notoriety to zero.");
+
+        // Notoriety Value - use captured pNotoriety pointer from hook
+        void* pNotoriety = Hooks::GetNotorietyPointer();
+        if (pNotoriety && !g_config.DisableNotoriety)
+        {
+            float* pNotorietyValue = reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(pNotoriety) + 0x0C);
+            if (!IsBadReadPtr(pNotorietyValue, sizeof(float)))
+            {
+                float notoriety = *pNotorietyValue;
+                if (ImGui::SliderFloat("Notoriety", &notoriety, 0.0f, 1.0f, "%.2f"))
+                {
+                    *pNotorietyValue = notoriety;
+                }
+            }
+        }
+        else if (!pNotoriety)
+        {
+            ImGui::TextDisabled("Notoriety pointer not captured yet.");
+        }
     }
 }
 
 void PlayerCheats::DrawMiscUI()
 {
-    // Resize Player
-    ImGui::TextDisabled("-- Resize Player --");
-    if (ImGui::SliderFloat("Scale (0.5 - 2.0)", &g_config.PlayerScale.get(), 0.5f, 2.0f, "%.2f"))
+    // Scale Section
+    if (ImGui::CollapsingHeader("Player Scale", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        // Applied in Update
+        ImGui::DragFloat("Scale", &g_config.PlayerScale.get(), 0.01f, 0.25f, 4.0f, "%.2f");
+        ImGui::SameLine();
+        if (ImGui::Button("Reset##Scale")) g_config.PlayerScale = 1.0f;
     }
-    if (ImGui::Button("Reset Scale")) g_config.PlayerScale = 1.0f;
 
-    ImGui::Separator();
-
-    // Speed Player
-    ImGui::TextDisabled("-- Speed Player --");
-    ImGui::TextWrapped("Controls Global Speed System (affects animation and movement).");
-    ImGui::SliderFloat("Speed Multiplier", &g_config.MovementSpeed.get(), 0.1f, 3.0f, "%.2f");
-    if (ImGui::Button("Reset Speed")) g_config.MovementSpeed = 1.0f;
+    // Speed Section
+    if (ImGui::CollapsingHeader("Speed Settings", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::TextDisabled("Player animation/movement speed");
+        ImGui::DragFloat("Player Speed", &g_config.PlayerSpeed.get(), 0.01f, 0.1f, 10.0f, "%.2f");
+        ImGui::SameLine();
+        if (ImGui::Button("Reset##PlayerSpeed")) g_config.PlayerSpeed = 1.0f;
+        
+        ImGui::Spacing();
+        
+        ImGui::TextDisabled("Global game speed (affects everything)");
+        ImGui::DragFloat("Global Speed", &g_config.GlobalSpeed.get(), 0.01f, 0.1f, 10.0f, "%.2f");
+        ImGui::SameLine();
+        if (ImGui::Button("Reset##GlobalSpeed")) g_config.GlobalSpeed = 1.0f;
+    }
 }
 
 void PlayerCheats::Update()
@@ -140,15 +154,14 @@ void PlayerCheats::UpdateNotoriety()
 
 void PlayerCheats::UpdateSpeed()
 {
-    // Speed handled via Hooks::Update() and SpeedPlayerHook.
-    // We update the Global Speed System just in case it's used elsewhere,
-    // but the actual player movement multiplication is now hooked.
+    // PlayerSpeed is handled via Hooks::Update() -> SpeedPlayerHook (BipedComponent)
+    // GlobalSpeed controls the SpeedSystem (global game speed)
 
     auto* sys = AC2::GetSpeedSystem();
     if (sys)
     {
-        sys->m_IsEnabled = (g_config.MovementSpeed != 1.0f);
-        sys->m_GlobalMultiplier = g_config.MovementSpeed;
+        sys->m_IsEnabled = (g_config.GlobalSpeed != 1.0f);
+        sys->m_GlobalMultiplier = g_config.GlobalSpeed;
     }
 }
 

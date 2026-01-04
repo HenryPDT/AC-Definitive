@@ -15,10 +15,16 @@ private:
     
     // Free Roam
     void UpdateFlyMode();
+    void UpdateCameraFlyMode();
     
     // Save/Restore
     void HandleSaveRestore();
 
     AC2::Scimitar::Vector3 m_SavedPos = { 0, 0, 0 };
     bool m_HasSavedPos = false;
+
+    // Edge detection for keybinds
+    bool m_WaypointKeyWasDown = false;
+    bool m_SaveKeyWasDown = false;
+    bool m_RestoreKeyWasDown = false;
 };

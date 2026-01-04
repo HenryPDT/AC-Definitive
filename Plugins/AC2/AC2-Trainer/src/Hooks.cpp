@@ -27,6 +27,14 @@ namespace Hooks
     AC2::CSrvPlayerHealth* captured_pHealth = nullptr;
     AC2::MapManager* captured_pMapManager = nullptr;
     static void* captured_pNotoriety = nullptr;
+    static void* captured_pFreeRoam = nullptr;
+    static void* captured_pMapManage = nullptr;  // For Map Flags
+    static void* captured_pFreeCamera = nullptr; // For Camera Fly Mode via FreeCamera hook
+    static void* captured_pFreeCam = nullptr;    // For camera yaw/pitch values (ESI from FreeCam hook)
+    
+    // Camera fly mode state
+    static int nFreeRoamTarget = 0; // 0=Off, 1=Player, 2=Camera
+    __declspec(align(16)) float g_CameraPos[4] = { 0, 0, 0, 0 };
     
     // Hook state flags
     static bool bInfiniteItems = false;
@@ -207,20 +215,36 @@ namespace Hooks
     // =========================================================
     // 6. Speed Player Hook
     // =========================================================
+    // CE 16933_Speed Player.asm logic:
+    // - Check if [esi+8] (entity) == pEntity (player)
+    // - Check [esi+0x1A] != 0 (not in water/climbing/etc)
+    // - Multiply [esi+0xA0] by speed and WRITE BACK
     DEFINE_HOOK(SpeedPlayerHook, SpeedPlayerReturn)
     {
         __asm {
+            push ebx
+
+            // CE: mov ebx,[esi+8]; cmp ebx,[pEntity]
+            // Check if this biped belongs to player entity
+            mov ebx, [esi+0x08]
+            cmp ebx, [g_pPlayer]
+            jne SpeedOriginal
+            
+            // CE: disable while in water, climbing, in well, etc...
+            // Check [esi+0x1A] - if zero, don't modify
+            mov bl, byte ptr [esi+0x1A]
+            cmp bl, 0
+            je SpeedOriginal
+            
+            // Multiply speed vector
+            movaps xmm0, [esi+0xA0]
+            mulps xmm0, [g_SpeedVector]
+            movaps [esi+0xA0], xmm0  // WRITE BACK to memory
+
+        SpeedOriginal:
+            pop ebx
             // Original: movaps xmm0, [esi+0xA0]
             movaps xmm0, [esi+0xA0]
-
-            // Check if player biped
-            cmp esi, [g_pBiped]
-            jne SpeedExit
-            
-            // Multiply by speed vector
-            mulps xmm0, [g_SpeedVector]
-
-        SpeedExit:
             jmp [SpeedPlayerReturn]
         }
     }
@@ -340,6 +364,113 @@ namespace Hooks
     };
 
     // =========================================================
+    // 11. FreeCam Hook (captures pFreeRoam for FOV control)
+    // =========================================================
+    // CE AOB: 8B 17 F3 0F 10 46 0C at FreeCam injection point
+    // CE: mov [pFreeRoam],edi; mov [pFreeCam],esi; then writes FOV to [edi+30]
+    DEFINE_HOOK(FreeCamHook, FreeCamReturn)
+    {
+        __asm {
+            // Capture pFreeRoam (EDI) and pFreeCam (ESI) for yaw/pitch
+            mov [captured_pFreeRoam], edi
+            mov [captured_pFreeCam], esi
+            
+            // Original code: mov edx,[edi]; movss xmm0,[esi+0C]
+            mov edx, [edi]
+            movss xmm0, [esi+0x0C]
+            
+            jmp [FreeCamReturn]
+        }
+    }
+
+    struct FreeCamPatch : AutoAssemblerCodeHolder_Base {
+        FreeCamPatch(uintptr_t addr) {
+            PresetScript_InjectJump(addr, (uintptr_t)&FreeCamHook, 7); // 8B 17 F3 0F 10 46 0C (7 bytes)
+        }
+    };
+
+    // =========================================================
+    // 12. MapManage Hook (captures pMapManage for Map Flags)
+    // =========================================================
+    // CE AOB: 0F B6 48 24 D9 5D F0 at MapManage injection point
+    // Original code: movzx ecx,byte ptr [eax+24]; fstp dword ptr [ebp-10]
+    // EAX contains pMapManage, flags at [eax+24]
+    DEFINE_HOOK(MapManageHook, MapManageReturn)
+    {
+        __asm {
+            mov [captured_pMapManage], eax
+            
+            // Original code: movzx ecx,byte ptr [eax+24]; fstp dword ptr [ebp-10]
+            movzx ecx, byte ptr [eax+0x24]
+            fstp dword ptr [ebp-0x10]
+            
+            jmp [MapManageReturn]
+        }
+    }
+
+    struct MapManagePatch : AutoAssemblerCodeHolder_Base {
+        MapManagePatch(uintptr_t addr) {
+            PresetScript_InjectJump(addr, (uintptr_t)&MapManageHook, 7); // 0F B6 48 24 D9 5D F0 (7 bytes)
+        }
+    };
+
+    // =========================================================
+    // 13. FreeCamera Hook (captures pFreeCamera for camera movement)
+    // =========================================================
+    // CE AOB: 0F 28 40 30 0F 29 41 30 at FreeCamera injection point
+    // Original code: movaps xmm0,[eax+30]; movaps [ecx+30],xmm0
+    // ECX = pFreeCamera (camera object)
+    // When bCameraFlyMode is enabled, write g_CameraPos to [ecx+30]
+    DEFINE_HOOK(FreeCameraHook, FreeCameraReturn)
+    {
+        __asm {
+            mov [captured_pFreeCamera], ecx
+            
+            // Original code: movaps xmm0,[eax+30]
+            movaps xmm0, [eax+0x30]
+            
+            // Check if camera fly mode enabled (nFreeRoamTarget == 2)
+            cmp [nFreeRoamTarget], 2
+            jne FreeCameraOriginal
+            
+            // CE-style: write g_CameraPos X/Y/Z to [ecx+30/34/38]
+            // Push/preserve registers
+            push edx
+            
+            // Write X to [ecx+0x30]
+            mov edx, [g_CameraPos]
+            mov [ecx+0x30], edx
+            
+            // Write Y to [ecx+0x34]
+            mov edx, [g_CameraPos+4]
+            mov [ecx+0x34], edx
+            
+            // Write Z to [ecx+0x38]
+            mov edx, [g_CameraPos+8]
+            mov [ecx+0x38], edx
+            
+            pop edx
+            
+            // Now read back what we wrote for xmm0
+            movaps xmm0, [ecx+0x30]
+            jmp FreeCameraExit
+            
+        FreeCameraOriginal:
+            // Original code: movaps [ecx+30],xmm0
+            movaps [ecx+0x30], xmm0
+            
+        FreeCameraExit:
+            jmp [FreeCameraReturn]
+        }
+    }
+
+    struct FreeCameraPatch : AutoAssemblerCodeHolder_Base {
+        FreeCameraPatch(uintptr_t addr) {
+            PresetScript_InjectJump(addr, (uintptr_t)&FreeCameraHook, 8); // 0F 28 40 30 0F 29 41 30 (8 bytes)
+        }
+    };
+
+    // =========================================================
     // Wrappers & Initialization
     // =========================================================
     using HealthWrapper = AutoAssembleWrapper<HealthPatch>;
@@ -352,6 +483,9 @@ namespace Hooks
     using DayTimeMgrWrapper = AutoAssembleWrapper<DayTimeMgrPatch>;
     using MapManagerWrapper = AutoAssembleWrapper<MapManagerPatch>;
     using NotorietyWrapper = AutoAssembleWrapper<NotorietyPatch>;
+    using FreeCamWrapper = AutoAssembleWrapper<FreeCamPatch>;
+    using MapManageWrapper = AutoAssembleWrapper<MapManagePatch>;
+    using FreeCameraWrapper = AutoAssembleWrapper<FreeCameraPatch>;
 
     std::unique_ptr<HealthWrapper> s_Health;
     std::unique_ptr<FallDamageWrapper> s_FallDamage;
@@ -363,6 +497,9 @@ namespace Hooks
     std::unique_ptr<DayTimeMgrWrapper> s_DayTimeMgr;
     std::unique_ptr<MapManagerWrapper> s_MapManager;
     std::unique_ptr<NotorietyWrapper> s_Notoriety;
+    std::unique_ptr<FreeCamWrapper> s_FreeCam;
+    std::unique_ptr<MapManageWrapper> s_MapManage;
+    std::unique_ptr<FreeCameraWrapper> s_FreeCamera;
 
 
     // =========================================================
@@ -404,6 +541,13 @@ namespace Hooks
         // World/Time Hooks
         INSTALL_HOOK(MissionTimer,    "8B 51 48 8B 41 4C 56",                           0x06);
         INSTALL_HOOK(DayTimeMgr,      "F3 0F 10 8E A0 00 00 00 F3 0F 5A",               0x08);
+
+        // Camera Hooks
+        INSTALL_HOOK(FreeCam,         "8B 17 F3 0F 10 46 0C",                           0x07);
+        INSTALL_HOOK(FreeCamera,      "0F 28 40 30 0F 29 41 30 E8",                     0x08);
+        
+        // Map Hooks
+        INSTALL_HOOK(MapManage,       "0F B6 48 24 D9 5D F0",                           0x07);
     }
 
     #undef INSTALL_HOOK
@@ -420,6 +564,9 @@ namespace Hooks
         s_DayTimeMgr.reset();
         s_MapManager.reset();
         s_Notoriety.reset();
+        s_FreeCam.reset();
+        s_MapManage.reset();
+        s_FreeCamera.reset();
     }
 
     void Update()
@@ -432,13 +579,14 @@ namespace Hooks
         
         // Map Config to Static Bools for ASM hooks
         bInfiniteItems = g_config.InfiniteItems;
-        bFreeRoam = g_config.FlyMode; 
+        bFreeRoam = (g_config.FreeRoamTarget == 1); // Player mode
         bIgnoreFallDamage = g_config.IgnoreFallDamage;
         bGodMode = g_config.GodMode;
         bDisableNotoriety = g_config.DisableNotoriety;
+        nFreeRoamTarget = g_config.FreeRoamTarget;
 
         // Update Speed Vector
-        float s = g_config.MovementSpeed;
+        float s = g_config.PlayerSpeed;
         g_SpeedVector[0] = s;
         g_SpeedVector[1] = s;
         g_SpeedVector[2] = s;
@@ -474,5 +622,35 @@ namespace Hooks
     float GetTimeScale()
     {
         return g_TimeScale;
+    }
+
+    // Get the captured FreeRoam pointer (FOV is at +0x30)
+    void* GetFreeRoamPointer()
+    {
+        return captured_pFreeRoam;
+    }
+
+    // Get the captured MapManage pointer (map flags at +0x24)
+    void* GetMapManagePointer()
+    {
+        return captured_pMapManage;
+    }
+
+    // Get the captured FreeCamera object (ECX) - holds coordinates at +0x30
+    void* GetFreeCameraObjectPointer()
+    {
+        return captured_pFreeCamera;
+    }
+
+    // Get pointer to camera position array for camera fly mode
+    float* GetCameraPosPointer()
+    {
+        return g_CameraPos;
+    }
+
+    // Get the captured FreeCam pointer (yaw at +0x20/+0x30, pitch at +0x38)
+    void* GetFreeCamPointer()
+    {
+        return captured_pFreeCam;
     }
 }

@@ -8,83 +8,72 @@ extern Trainer::Configuration g_config;
 
 void InventoryCheats::DrawUI()
 {
-    ImGui::Text("Inventory Management");
-    ImGui::TextWrapped("Edit values directly below. Enable 'Infinite Items' to lock them to max.");
-    ImGui::Separator();
+    if (AC2::IsInWhiteRoom())
+    {
+        ImGui::TextDisabled("Unavailable while loading/in white room");
+        return;
+    }
 
     auto* inv = AC2::GetInventory();
 
-    // Money Special Handling (int32_t)
-    if (inv && inv->m_pList && inv->m_pList->m_pMoney)
+    // Money Section
+    if (ImGui::CollapsingHeader("Money", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::InputInt("Money to Add", &m_MoneyToAdd);
-        if (ImGui::Button("Add Money"))
+        if (inv && inv->m_pList && inv->m_pList->m_pMoney)
         {
-            inv->m_pList->m_pMoney->m_Count += m_MoneyToAdd;
+            int money = inv->m_pList->m_pMoney->m_Count;
+            if (ImGui::DragInt("Florins", &money, 100, 0, 9999999))
+            {
+                inv->m_pList->m_pMoney->m_Count = money;
+            }
+        }
+        else
+        {
+            ImGui::TextDisabled("Money not available (load a save).");
         }
     }
 
-    ImGui::Separator();
-
-    if (inv && inv->m_pList)
+    // Consumables Section
+    if (ImGui::CollapsingHeader("Consumables", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        auto drawItem = [](const char* label, AC2::InventoryItem* item) {
-            if (item) {
+        ImGui::TextDisabled("Enable 'Infinite Items' on Player tab to lock all.");
+        
+        if (inv && inv->m_pList)
+        {
+            // Helper lambda for drawing items
+            auto drawItem = [](const char* label, AC2::InventoryItem* item) {
+                if (!item) return;
                 int val = item->m_Count;
-                if (ImGui::SliderInt(label, &val, 0, 99)) { // Increased max to 99 as per request
+                if (ImGui::DragInt(label, &val, 1, 0, 99)) {
                     item->m_Count = val;
                 }
-            }
-        };
+            };
 
-        drawItem("Medicine", inv->m_pList->m_pMedicine);
-        drawItem("Smoke Bombs", inv->m_pList->m_pSmokeBombs);
-        drawItem("Bullets", inv->m_pList->m_pBullets);
-        drawItem("Poison", inv->m_pList->m_pPoison);
+            drawItem("Medicine", inv->m_pList->m_pMedicine);
+            drawItem("Smoke Bombs", inv->m_pList->m_pSmokeBombs);
+            drawItem("Bullets", inv->m_pList->m_pBullets);
+            drawItem("Poison", inv->m_pList->m_pPoison);
 
-        // Knives Special Handling (uint8_t)
-        if (inv->m_pList->m_pKnives)
-        {
-            int val = (int)inv->m_pList->m_pKnives->m_CountByte;
-            int maxVal = (int)inv->m_pList->m_pKnives->m_MaxByte;
-            if (ImGui::SliderInt("Knives", &val, 0, 30)) // Knives max is usually lower, keeping reasonable cap
+            // Knives (uint8_t - read-only display, modifying can crash)
+            if (inv->m_pList->m_pKnives)
             {
-                inv->m_pList->m_pKnives->m_CountByte = (uint8_t)val;
+                int val = (int)inv->m_pList->m_pKnives->m_CountByte;
+                ImGui::Text("Knives: %d", val);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Knives are handled via hook only to prevent crashes.");
             }
         }
-    }
-    else
-    {
-        ImGui::TextDisabled("Inventory not available (load a save).");
+        else
+        {
+            ImGui::TextDisabled("Inventory not available (load a save).");
+        }
     }
 }
 
 void InventoryCheats::Update()
 {
-    // Skip updates while in loading screen to prevent crash
-    if (AC2::IsInWhiteRoom()) return;
-
-    if (g_config.InfiniteItems)
-    {
-        auto* inv = AC2::GetInventory();
-        if (inv && inv->m_pList)
-        {
-            auto refill = [](AC2::InventoryItem* item) {
-                if (item) item->m_Count = item->m_MaxCount > 0 ? item->m_MaxCount : 15;
-            };
-
-            refill(inv->m_pList->m_pMedicine);
-            refill(inv->m_pList->m_pSmokeBombs);
-            refill(inv->m_pList->m_pBullets);
-            refill(inv->m_pList->m_pPoison);
-
-            // Knives are handled by Hook_LockKnives to prevent decrement.
-            // We just ensure they are full here.
-            if (inv->m_pList->m_pKnives)
-            {
-                uint8_t maxK = inv->m_pList->m_pKnives->m_MaxByte > 0 ? inv->m_pList->m_pKnives->m_MaxByte : 20;
-                inv->m_pList->m_pKnives->m_CountByte = maxK;
-            }
-        }
-    }
+    // Intentionally empty.
+    // The ASM hooks (LockConsumables and LockKnives) handle infinite items by blocking
+    // the decrement instruction at runtime. Direct value modification is NOT safe,
+    // especially for knives which are container-managed and will crash if written to.
+    // This matches the CE trainer approach exactly.
 }

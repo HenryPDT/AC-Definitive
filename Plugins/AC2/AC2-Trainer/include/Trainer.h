@@ -1,6 +1,7 @@
 #pragma once
 #include <IPlugin.h>
 #include <Serialization/Config.h>
+#include <KeyBind.h>
 
 extern const PluginLoaderInterface* g_loader_ref;
 
@@ -18,7 +19,8 @@ namespace Trainer
         PROPERTY(IgnoreFallDamage, bool, Serialization::BooleanAdapter, false)
         
         // Player Stats
-        PROPERTY(MovementSpeed, float, Serialization::NumericAdapter_template<float>, 1.0f)
+        PROPERTY(PlayerSpeed, float, Serialization::NumericAdapter_template<float>, 1.0f)  // BipedComponent animation speed
+        PROPERTY(GlobalSpeed, float, Serialization::NumericAdapter_template<float>, 1.0f)  // SpeedSystem global speed
         PROPERTY(PlayerScale, float, Serialization::NumericAdapter_template<float>, 1.0f)
         
         // World / Time
@@ -27,7 +29,19 @@ namespace Trainer
         PROPERTY(FreezeMissionTimer, bool, Serialization::BooleanAdapter, false)
 
         // Teleport / Free Roam
-        PROPERTY(FlyMode, bool, Serialization::BooleanAdapter, false)
-        PROPERTY(FlySpeed, float, Serialization::NumericAdapter_template<float>, 10.0f)
+        PROPERTY(FreeRoamTarget, int, Serialization::NumericAdapter_template<int>, 0)  // 0=Off, 1=Player, 2=Camera
+        PROPERTY(FlySpeed, float, Serialization::NumericAdapter_template<float>, 1.0f)
+        PROPERTY(CameraFOV, float, Serialization::NumericAdapter_template<float>, 0.81f)
+
+        // Keybinds
+        PROPERTY(Key_TeleportWaypoint, KeyBind, Serialization::KeyBindAdapter, KeyBind('T', false, true, false)) // Shift+T
+        PROPERTY(Key_SavePosition, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_F11))
+        PROPERTY(Key_RestorePosition, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_F12))
+        PROPERTY(Key_FlyForward, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD8))
+        PROPERTY(Key_FlyBackward, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD2))
+        PROPERTY(Key_FlyLeft, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD4))
+        PROPERTY(Key_FlyRight, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD6))
+        PROPERTY(Key_FlyUp, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD9))
+        PROPERTY(Key_FlyDown, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD7))
     };
 }

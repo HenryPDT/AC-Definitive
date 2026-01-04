@@ -2,6 +2,7 @@
 #include "Trainer.h"
 #include "IPlugin.h"
 #include "imgui.h"
+#include <ImGuiConfigUtils.h>
 #include "Core/GameRoots.h"
 #include "Hooks.h"
 #include "Cheats/PlayerCheats.h"
@@ -76,45 +77,65 @@ public:
         // Draw the UI directly here or delegate to modules
         if (ImGui::BeginTabBar("TrainerTabs"))
         {
-            // Modlist: Player Status
-            if (ImGui::BeginTabItem("Player Status"))
+            // Tab 1: Player - Health, cheats, scale, speed
+            if (ImGui::BeginTabItem("Player"))
             {
                 m_PlayerCheats->DrawUI();
-                ImGui::EndTabItem();
-            }
-
-            // Modlist: Miscellaneous
-            if (ImGui::BeginTabItem("Miscellaneous"))
-            {
-                // Time Of Day / Map
-                m_WorldCheats->DrawUI();
-
-                // Resize / Speed
+                ImGui::Spacing();
                 m_PlayerCheats->DrawMiscUI();
-
-                // Switch Character
-                ImGui::Separator();
-                m_CharacterCheats->DrawUI();
-
                 ImGui::EndTabItem();
             }
 
-            // Modlist: Inventory
+            // Tab 2: Inventory - Money and items
             if (ImGui::BeginTabItem("Inventory"))
             {
                 m_InventoryCheats->DrawUI();
                 ImGui::EndTabItem();
             }
 
-            // Modlist: Teleport & Coordinates
-            if (ImGui::BeginTabItem("Teleport & Coordinates"))
+            // Tab 3: World - Time, mission timer, map
+            if (ImGui::BeginTabItem("World"))
+            {
+                m_WorldCheats->DrawUI();
+                ImGui::EndTabItem();
+            }
+
+            // Tab 4: Camera & Movement - Teleport, free roam, FOV
+            if (ImGui::BeginTabItem("Camera & Movement"))
             {
                 m_TeleportCheats->DrawUI();
                 ImGui::EndTabItem();
             }
 
+            // Tab 5: Character - Character switcher
+            if (ImGui::BeginTabItem("Character"))
+            {
+                m_CharacterCheats->DrawUI();
+                ImGui::EndTabItem();
+            }
+
+            // Tab 6: Settings - Keybinds
             if (ImGui::BeginTabItem("Settings"))
             {
+                // Keybinds
+                ImGui::TextDisabled("-- Keybinds --");
+                
+                ImGui::KeyBindInput("Teleport to Waypoint", g_config.Key_TeleportWaypoint.get());
+                ImGui::KeyBindInput("Save Position", g_config.Key_SavePosition.get());
+                ImGui::KeyBindInput("Restore Position", g_config.Key_RestorePosition.get());
+                
+                ImGui::Separator();
+                ImGui::TextDisabled("-- Fly Mode Controls --");
+                
+                ImGui::KeyBindInput("Fly Forward", g_config.Key_FlyForward.get());
+                ImGui::KeyBindInput("Fly Backward", g_config.Key_FlyBackward.get());
+                ImGui::KeyBindInput("Fly Left", g_config.Key_FlyLeft.get());
+                ImGui::KeyBindInput("Fly Right", g_config.Key_FlyRight.get());
+                ImGui::KeyBindInput("Fly Up", g_config.Key_FlyUp.get());
+                ImGui::KeyBindInput("Fly Down", g_config.Key_FlyDown.get());
+
+                ImGui::Separator();
+                
                 if (ImGui::Button("Save Configuration"))
                 {
                     Serialization::JSON outJson;
