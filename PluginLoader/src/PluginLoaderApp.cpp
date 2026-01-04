@@ -391,8 +391,6 @@ void PluginLoaderApp::Init()
     m_loaderInterface.GetImGuiContext = GetImGuiContext_Impl;
     m_loaderInterface.GetPluginInterface = GetPluginInterface_Impl;
 
-    m_pluginManager.Init(m_module, m_loaderInterface);
-
     // Apply CPU affinity if a custom mask is set. 
     // If 0, we do nothing here and let plugins (like EaglePatch) handle defaults.
     if (PluginLoaderConfig::g_Config.CpuAffinityMask != 0)
@@ -404,14 +402,20 @@ void PluginLoaderApp::Init()
     BaseHook::g_FramerateLimiter.SetEnabled(PluginLoaderConfig::g_Config.EnableFPSLimit);
     BaseHook::g_FramerateLimiter.SetTargetFPS(static_cast<double>(PluginLoaderConfig::g_Config.FPSLimit));
 
-    m_settings = std::make_unique<LoaderSettings>(LoaderWndProc);
-    BaseHook::Start(m_settings.get());
+    // Initialize BaseHook (and hooks) BEFORE loading plugins.
+    // This prevents race conditions where a plugin initializes controllers/input
+    // before our blocking hooks are installed.
     BaseHook::Data::thisDLLModule = m_module;
-
+    m_settings = std::make_unique<LoaderSettings>(LoaderWndProc);
+    
     // Connect KeyBind system to BaseHook's Virtual Input
     KeyBind::SetInputProvider(BaseHook::Hooks::TryGetVirtualXInputState);
 
+    BaseHook::Start(m_settings.get());
     LOG_INFO("Basehook initialized successfully.");
+
+    // Now load plugins
+    m_pluginManager.Init(m_module, m_loaderInterface);
 }
 
 void PluginLoaderApp::Tick()
