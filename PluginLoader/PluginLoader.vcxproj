@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <ProjectGuid>{B5A24A68-3E8E-4E6F-98E9-7C5B2C3ED09F}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>PluginLoader</RootNamespace>

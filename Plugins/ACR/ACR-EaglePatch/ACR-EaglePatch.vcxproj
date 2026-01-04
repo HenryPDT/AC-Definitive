@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{A3C5D2E1-7B4A-46F2-9B7E-5F3C2D1A9B7C}</ProjectGuid>
     <RootNamespace>ACREaglePatch</RootNamespace>

@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{e7c4a51f-1d7d-4a2d-8c54-8f76f32e16a4}</ProjectGuid>
     <RootNamespace>AC2ParkourMod</RootNamespace>

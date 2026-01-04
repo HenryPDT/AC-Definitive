@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <ProjectGuid>{F2A3B4C5-D6E7-4F8A-9B0C-1D2E3F4A5B6D}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>BaseHook</RootNamespace>

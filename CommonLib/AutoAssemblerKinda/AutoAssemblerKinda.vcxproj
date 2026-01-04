@@ -25,7 +25,7 @@
     <ClCompile Include="src\AutoAssemblerKinda.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{545fd0f0-c203-4600-ad7f-4600f7907b89}</ProjectGuid>
     <RootNamespace>AutoAssemblerKinda</RootNamespace>

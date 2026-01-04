@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{A1B2C3D4-E6F7-408A-9B0C-1D2E3F4A5B6F}</ProjectGuid>
     <RootNamespace>AC1EaglePatch</RootNamespace>

@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{A9B7C4D1-8E9F-4A3B-8C7D-6F5E4D3C2B1A}</ProjectGuid>
     <RootNamespace>PluginAPI</RootNamespace>
