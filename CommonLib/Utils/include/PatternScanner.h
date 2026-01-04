@@ -4,9 +4,13 @@
 #include <vector>
 #include <optional>
 #include <windows.h>
+#include <type_traits>
 
 namespace Utils
 {
+    // Checks if memory is committed and readable
+    bool IsSafeRead(const void* ptr, size_t size);
+
     struct ScanResult
     {
         uintptr_t address = 0;
@@ -32,14 +36,28 @@ namespace Utils
         ScanResult ScanRelative(std::string_view signature, intptr_t range = 512) const;
 
         // Follows a multi-level pointer chain starting from this address.
-        // Returns {0, false} if the chain is broken or memory is invalid.
+        // Logic: Addr = *(Addr + Offset). Returns {0, false} if broken.
         ScanResult ResolvePointerChain(const std::vector<int32_t>& offsets) const;
+
+        // Extracts an absolute address from an instruction operand (32-bit).
+        // e.g. MOV EAX, [0x12345678] -> returns 0x12345678.
+        // instructionOffset: Offset from the scanned address to the start of the instruction.
+        ScanResult ExtractAbsoluteAddress(intptr_t instructionOffset = 0) const;
 
         // Scans backwards for function prologue (CC CC or 55 8B EC)
         ScanResult AlignToFunctionStart() const;
 
         template <typename T>
-        T As() const { return (T)address; }
+        T As() const {
+            if constexpr (std::is_pointer_v<T>) {
+                using Pointee = std::remove_pointer_t<T>;
+                if constexpr (!std::is_void_v<Pointee> && !std::is_function_v<Pointee>) {
+                    if (!found || address == 0 || !IsSafeRead((void*)address, sizeof(Pointee)))
+                        return nullptr;
+                }
+            }
+            return (T)address;
+        }
     };
 
     class PatternScanner
@@ -66,6 +84,9 @@ namespace Utils
 
         // Scan a memory range
         static ScanResult ScanRange(const uint8_t* start, size_t size, std::string_view signature);
+
+        // Creates a ScanResult from a raw address.
+        static ScanResult FromAddress(uintptr_t address);
 
     private:
         friend struct ScanResult;

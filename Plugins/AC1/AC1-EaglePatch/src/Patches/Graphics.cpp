@@ -62,16 +62,16 @@ namespace AC1EaglePatch
             // MSAA Patches
             
             // MSAA_1: 3B 81 84 00 00 00 72 17
-            // Target is at 72 17 (+6 from match)
+            // Target is at 72 17 (+0x06 from match)
             auto msaa1 = PatternScanner::ScanMain("3B 81 84 00 00 00 72 17 E8");
-            if (msaa1) sAddresses::MSAA_1 = msaa1.Offset(6).address;
+            if (msaa1) sAddresses::MSAA_1 = msaa1.Offset(0x06).address;
 
             // MSAA_2: 3B 8A 84 00 00 00
             auto msaa2 = PatternScanner::ScanMain("3B 8A 84 00 00 00");
             if (msaa2) {
                 sAddresses::MSAA_2 = msaa2.address;
-                sAddresses::MSAA_3 = msaa2.Offset(0xB).address;
-                MSAA_Patch2_Return = msaa2.address + 6;
+                sAddresses::MSAA_3 = msaa2.Offset(0x0B).address;
+                MSAA_Patch2_Return = msaa2.address + 0x06;
             }
 
             if (version == GameVersion::Version1) // DX10
@@ -80,14 +80,14 @@ namespace AC1EaglePatch
                 // Match at 3BAD2E
                 auto check = PatternScanner::ScanMain("6A 01 89 06 8B 08");
                 if (check) {
-                    // DX10_Check1 (3BAD2E+1) is at +1
-                    sAddresses::DX10_Check1 = check.Offset(1).address;
+                    // DX10_Check1 (3BAD2E+1) is at +0x01
+                    sAddresses::DX10_Check1 = check.Offset(0x01).address;
                     
                     // DX10_Check2 (3BAD70+1) is at +0x43 (3BAD70 - 3BAD2E = 0x42)
                     sAddresses::DX10_Check2 = check.Offset(0x43).address;
 
-                    // fnGetDisplayModes (3BAD20) is at -0xE
-                    fnGetDisplayModes = check.Offset(-0xE).As<t_GetDisplayModes>();
+                    // fnGetDisplayModes (3BAD20) is at -0x0E
+                    fnGetDisplayModes = check.Offset(-0x0E).As<t_GetDisplayModes>();
 
                     // fnFindCurrentResolutionMode is called at 3BAD88 (Match + 0x5A)
                     auto callSite = check.Offset(0x5A);
@@ -101,7 +101,7 @@ namespace AC1EaglePatch
                 auto hook = PatternScanner::ScanMain("E8 DE 78 FC FF");
                 if (hook) {
                     sAddresses::DX10_Hook = hook.address;
-                    DX10_Hook_Return = hook.address + 5;
+                    DX10_Hook_Return = hook.address + 0x05;
                 }
             }
 
@@ -125,10 +125,10 @@ namespace AC1EaglePatch
             // Patch 2: MOV ECX, 1; NOP (B9 01 00 00 00 90)
             // Replaced with InjectJump to MSAA_Patch2_Wrapper
             // Stolen bytes: 6 (cmp instruction). InjectJump (5) + NOP (1).
-            PresetScript_InjectJump(addr2, (uintptr_t)&MSAA_Patch2_Wrapper, 6);
+            PresetScript_InjectJump(addr2, (uintptr_t)&MSAA_Patch2_Wrapper, 0x06);
 
             // Patch 3: NOPs (3 bytes)
-            ms3 = { nop(3) };
+            ms3 = { nop(0x03) };
         }
     };
 
