@@ -12,78 +12,109 @@ extern Trainer::Configuration g_config;
 
 void WorldCheats::DrawUI()
 {
-    ImGui::Text("Time of Day");
-    ImGui::Separator();
-    
-    // Time control
-    auto* todManager = AC2::GetTimeOfDayManager();
-    float* pCurrentTime = AC2::GetCurrentTimeGlobal();
-
-    if (pCurrentTime)
+    if (AC2::IsInWhiteRoom())
     {
-        // Read current time if we aren't dragging/interacting
-        if (!ImGui::IsAnyItemActive() && !g_config.PauseTime)
-            g_config.TimeOfDay = *pCurrentTime;
+        ImGui::TextDisabled("Unavailable while loading/in white room");
+        return;
+    }
 
-        if (ImGui::SliderFloat("Hour", &g_config.TimeOfDay.get(), 0.0f, 24.0f, "%.2f"))
-        {
-            *pCurrentTime = g_config.TimeOfDay;
-        }
+    // Time of Day Section
+    if (ImGui::CollapsingHeader("Time of Day", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        auto* todManager = reinterpret_cast<AC2::TimeOfDayManager*>(Hooks::GetDayTimeMgrPointer());
+        float* pCurrentTime = AC2::GetCurrentTimeGlobal();
 
-        if (todManager)
+        if (pCurrentTime)
         {
-        if (ImGui::Checkbox("Pause Time", &g_config.PauseTime.get()))
-        {
-                // CE: 0 = paused, 1 = unpaused (byte at [pDayTimeMgr]+58)
-                todManager->m_IsPaused = g_config.PauseTime ? 0 : 1;
-        }
+            // Read current time if we aren't dragging/interacting
+            if (!ImGui::IsAnyItemActive() && !g_config.PauseTime)
+                g_config.TimeOfDay = *pCurrentTime;
 
-            // Time Speed - writes to g_TimeScale global that the hook reads from
-            // Slider: 1.0x = normal, 2.0x = faster (halves delay), 0.5x = slower (doubles delay)
-            static float uiTimeScale = 1.0f;
-            if (ImGui::SliderFloat("Time Flow Speed", &uiTimeScale, 0.1f, 100.0f, "%.1fx"))
+            if (ImGui::DragFloat("Hour", &g_config.TimeOfDay.get(), 0.01f, 0.0f, 0.0f, "%.2f"))
             {
-                Hooks::SetTimeScale(AC2::Constants::TIME_DELAY_DEFAULT / uiTimeScale);
+                // Wrap hours bidirectionally: 24+ wraps to 0+, negative wraps to 24-
+                float hour = g_config.TimeOfDay;
+                while (hour >= 24.0f) hour -= 24.0f;
+                while (hour < 0.0f) hour += 24.0f;
+                g_config.TimeOfDay = hour;
+                *pCurrentTime = hour;
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adjusts day/night cycle speed. Default: 1.0x");
+
+            if (todManager)
+            {
+                if (ImGui::Checkbox("Pause Time", &g_config.PauseTime.get()))
+                {
+                    todManager->m_IsPaused = g_config.PauseTime ? 0 : 1;
+                }
+
+                static float uiTimeScale = 1.0f;
+                ImGui::DragFloat("Time Speed", &uiTimeScale, 0.1f, 0.1f, 1000.0f, "%.1fx");
+                if (ImGui::IsItemEdited())
+                {
+                    Hooks::SetTimeScale(AC2::Constants::TIME_DELAY_DEFAULT / uiTimeScale);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Reset##TimeSpeed"))
+                {
+                    uiTimeScale = 1.0f;
+                    Hooks::SetTimeScale(AC2::Constants::TIME_DELAY_DEFAULT);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adjusts day/night cycle speed. Default: 1.0x");
+            }
+            else
+            {
+                ImGui::TextDisabled("Manager not captured. Play for a moment.");
+            }
         }
         else
         {
-            ImGui::TextDisabled("Manager not found (Pause/Speed unavailable).");
+            ImGui::TextDisabled("Time Global not available.");
         }
     }
-    else
+
+    // Mission Timer Section
+    if (ImGui::CollapsingHeader("Mission Timer"))
     {
-        ImGui::TextDisabled("Time Global not available.");
+        if (AC2::GetMissionTimer())
+        {
+            ImGui::Checkbox("Freeze Mission Timer", &g_config.FreezeMissionTimer.get());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locks countdown timer in races/courier missions.");
+        }
+        else
+        {
+            ImGui::TextDisabled("Timer not active.");
+        }
     }
 
-    ImGui::Separator();
-    ImGui::Text("Mission Timer");
-
-    if (AC2::GetMissionTimer())
+    // Map Management Section
+    if (ImGui::CollapsingHeader("Map Management"))
     {
-        ImGui::Checkbox("Freeze Mission Timer", &g_config.FreezeMissionTimer.get());
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locks the countdown timer in races/courier missions.");
+        void* pMapManage = Hooks::GetMapManagePointer();
+        if (pMapManage)
+        {
+            uint8_t* pMapFlags = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(pMapManage) + 0x24);
+            
+            static const char* mapFlagModes[] = { 
+                "Disabled", 
+                "All Icons (In Progress)", 
+                "Cleared Map (In Progress)", 
+                "All Icons (Cleared Map)" 
+            };
+            
+            int currentMode = *pMapFlags;
+            if (currentMode < 0 || currentMode > 3) currentMode = 0;
+            
+            if (ImGui::Combo("Map Flags Mode", &currentMode, mapFlagModes, 4))
+            {
+                *pMapFlags = static_cast<uint8_t>(currentMode);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Affects how map icons and collectibles are shown.");
+        }
+        else
+        {
+            ImGui::TextDisabled("Map pointer not captured. Play for a moment.");
+        }
     }
-    else
-    {
-        ImGui::TextDisabled("Timer not active.");
-    }
-
-    ImGui::Dummy(ImVec2(0, 10));
-    ImGui::Text("Map Management");
-    ImGui::Separator();
-
-    // NOTE: MapManager hook in Hooks.cpp captures the WAYPOINT object, not the Manager.
-    // The Manager pointer for flags might need a separate scan or verify Roots.
-    // Roots.MapManager is 8B 49 18... which is getting waypoint.
-    // Flags are at [pMapManage]+24.
-    // CE Script 93339 hooks `94B0B8` to get `pMapManage`.
-    // We didn't hook that yet. For now disabling Map Mode UI if pointer invalid.
-    
-    // Implementation requires MapManagerHook2 if we want to change map flags.
-    // Current MapManagerHook is for Teleport.
-    ImGui::TextDisabled("Map Flags not fully implemented.");
 }
 
 void WorldCheats::Update()
@@ -91,14 +122,7 @@ void WorldCheats::Update()
     // Skip all updates while in loading screen to prevent crash
     if (AC2::IsInWhiteRoom()) return;
 
-    // Time Pause: continuously enforce pause state (0 = paused, 1 = unpaused)
-    auto* todManager = AC2::GetTimeOfDayManager();
-    if (todManager)
-    {
-        todManager->m_IsPaused = g_config.PauseTime ? 0 : 1;
-    }
-
-    // Mission Timer Freeze
+    // Mission Timer Freeze (uses hook-captured pointer which is safer)
     if (g_config.FreezeMissionTimer)
     {
         auto* timer = AC2::GetMissionTimer();
