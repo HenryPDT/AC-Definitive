@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\AutoAssemblerKinda\AutoAssemblerKinda.h" />
+    <ClInclude Include="include\AutoAssemblerKinda.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\AutoAssemblerKinda.cpp" />

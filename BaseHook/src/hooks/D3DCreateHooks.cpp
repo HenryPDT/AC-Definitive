@@ -1,12 +1,18 @@
 #include "pch.h"
 
 #include "hooks/D3DCreateHooks.h"
-#include "hooks/DXGI_Common.h"
+#include "hooks/DXGIHooks.h"
+#include "hooks/WindowHooks.h"
+#include "hooks/Hooks.h"
+#include "hooks/DX9Hooks.h"
+#include "hooks/InputHooks.h"
+#include "hooks/WindowHooks.h"
+#include "hooks/Hooks.h"
 
-#include "base.h"
-#include "WindowedMode.h"
+#include "core/BaseHook.h"
+#include "core/WindowedMode.h"
 #include "log.h"
-#include "ComPtr.h"
+#include "util/ComPtr.h"
 #include <d3d9.h>
 #include <kiero/minhook/include/MinHook.h>
 #include <mutex>
@@ -279,8 +285,8 @@ namespace BaseHook
                         WindowedMode::NotifyResolutionChange(desc.BufferDesc.Width, desc.BufferDesc.Height);
                 }
 
-                DXGICommon::EnsureSwapChainFullscreenHook(*ppSwapChain);
-                DXGICommon::DisableDXGIAltEnter(*ppSwapChain);
+                EnsureSwapChainFullscreenHook(*ppSwapChain);
+                DisableDXGIAltEnter(*ppSwapChain);
 
                 // Apply window settings after successful creation to avoid interference during creation
                 if (WindowedMode::ShouldHandle() && Data::hWindow) {
@@ -331,8 +337,8 @@ namespace BaseHook
                         WindowedMode::NotifyResolutionChange(desc.BufferDesc.Width, desc.BufferDesc.Height);
                 }
 
-                DXGICommon::EnsureSwapChainFullscreenHook(*ppSwapChain);
-                DXGICommon::DisableDXGIAltEnter(*ppSwapChain);
+                EnsureSwapChainFullscreenHook(*ppSwapChain);
+                DisableDXGIAltEnter(*ppSwapChain);
 
                 if (WindowedMode::ShouldHandle() && Data::hWindow) {
                     WindowedMode::Apply(Data::hWindow);
@@ -594,8 +600,8 @@ namespace BaseHook
                 if (pDescToUse && pDescToUse->OutputWindow)
                     WindowedMode::SetManagedWindow(pDescToUse->OutputWindow);
 
-                DXGICommon::EnsureSwapChainFullscreenHook(*ppSwapChain);
-                DXGICommon::DisableDXGIAltEnter(*ppSwapChain);
+                EnsureSwapChainFullscreenHook(*ppSwapChain);
+                DisableDXGIAltEnter(*ppSwapChain);
 
                 if (WindowedMode::ShouldHandle() && Data::hWindow) {
                     WindowedMode::Apply(Data::hWindow);
@@ -642,8 +648,8 @@ namespace BaseHook
                         WindowedMode::NotifyResolutionChange(desc.BufferDesc.Width, desc.BufferDesc.Height);
                 }
 
-                DXGICommon::EnsureSwapChainFullscreenHook(*ppSwapChain);
-                DXGICommon::DisableDXGIAltEnter(*ppSwapChain);
+                EnsureSwapChainFullscreenHook(*ppSwapChain);
+                DisableDXGIAltEnter(*ppSwapChain);
 
                 if (WindowedMode::ShouldHandle() && Data::hWindow) {
                     WindowedMode::Apply(Data::hWindow);

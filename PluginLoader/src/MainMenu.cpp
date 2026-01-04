@@ -1,7 +1,10 @@
-#include "ui/MainMenu.h"
+#include "MainMenu.h"
 
 #include "ImGuiCTX.h"
-#include "base.h"
+#include "core/BaseHook.h"
+#include "core/WindowedMode.h"
+#include "util/FramerateLimiter.h"
+#include "util/GameDetection.h"
 
 #include "imgui.h"
 

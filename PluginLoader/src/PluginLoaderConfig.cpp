@@ -3,7 +3,7 @@
 #include "Serialization/Utils/FileSystem.h"
 #include "log.h"
 #include <chrono>
-#include "FramerateLimiter.h"
+#include "util/FramerateLimiter.h"
 
 namespace PluginLoaderConfig {
 

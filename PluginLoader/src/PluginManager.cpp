@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <algorithm>
 #include "imgui_internal.h"
-#include "GameDetection.h"
+#include "util/GameDetection.h"
 
 void PluginManager::Init(HMODULE loaderModule, PluginLoaderInterface& loaderInterface)
 {

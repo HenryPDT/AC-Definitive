@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #include "PluginLoaderConfig.h"
-#include "WindowedMode.h"
+#include "core/WindowedMode.h"
 #include "KeyBind.h"
 
 struct SettingsDraft

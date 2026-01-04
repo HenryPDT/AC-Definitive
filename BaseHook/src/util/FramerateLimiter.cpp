@@ -1,7 +1,7 @@
 #include "pch.h"
-#include "FramerateLimiter.h"
+#include "util/FramerateLimiter.h"
 #include "log.h"
-#include "base.h" // For Data::pContext11
+#include "core/BaseHook.h" // For Data::pContext11
 #include <algorithm>
 #include <cmath>
 #include <numeric>

@@ -1,5 +1,7 @@
 #include "pch.h"
-#include "base.h"
+#include "core/BaseHook.h"
+#include "hooks/InputHooks.h"
+#include "hooks/WindowHooks.h"
 #include <unordered_set>
 #include <unordered_map>
 #include <shared_mutex>
@@ -28,6 +30,11 @@
 #endif
 
 using BaseHook::Hooks::GamepadInputSource;
+
+namespace BaseHook
+{
+    namespace Hooks
+    {
 
 static std::wstring ToWideString(const TCHAR* path)
 {
@@ -1632,7 +1639,7 @@ HRESULT WINAPI hkDirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID rii
     return hr;
 }
 
-namespace BaseHook { namespace Hooks {
+
     void CleanupDirectInput()
     {
         ShutdownSonySupport();

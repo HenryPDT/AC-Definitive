@@ -2,8 +2,8 @@
 #include "CpuAffinity.h"
 #include "ImGuiConfigUtils.h"
 #include "log.h"
-#include "FramerateLimiter.h"
-#include "base.h"
+#include "util/FramerateLimiter.h"
+#include "core/BaseHook.h"
 
 #include "imgui.h"
 

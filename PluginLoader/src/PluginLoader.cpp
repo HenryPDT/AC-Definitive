@@ -1,8 +1,8 @@
 #include "PluginLoaderApp.h"
 
 #include "PluginLoaderConfig.h"
-#include "WindowedMode.h"
-#include "base.h"
+#include "core/WindowedMode.h"
+#include "core/BaseHook.h"
 #include "log.h"
 
 #include <windows.h>

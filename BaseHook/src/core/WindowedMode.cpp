@@ -1,9 +1,11 @@
 #include "pch.h"
-#include "WindowedMode.h"
-#include "base.h"
+#include "core/WindowedMode.h"
+#include "core/BaseHook.h"
+#include "hooks/Hooks.h"
+#include "hooks/WindowHooks.h"
 #include "log.h"
-#include "ComPtr.h"
-#include "RenderDetection.h"
+#include "util/ComPtr.h"
+#include "util/RenderDetection.h"
 #include <cstdio>
 #include <vector>
 #include <filesystem>

@@ -6,8 +6,8 @@
 #include "Serialization/Adapters/EnumAdapter.h"
 #include "Serialization/Adapters/HexAdapter.h"
 #include "KeyBind.h"
-#include "base.h"
-#include "WindowedMode.h"
+#include "core/BaseHook.h"
+#include "core/WindowedMode.h"
 #include <filesystem>
 namespace fs = std::filesystem;
 

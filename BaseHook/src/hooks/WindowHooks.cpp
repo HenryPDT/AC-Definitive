@@ -1,8 +1,9 @@
 #include "pch.h"
-#include "base.h"
-#include "WindowedMode.h"
-#include "hooks/hooks.h"
+#include "hooks/WindowHooks.h"
 #include "hooks/D3DCreateHooks.h"
+#include "hooks/Hooks.h"
+#include "core/BaseHook.h"
+#include "core/WindowedMode.h"
 #include <vector>
 #include <string>
 
@@ -296,10 +297,10 @@ namespace BaseHook
                 if (WindowedMode::ShouldHandle()) {
                     int dx = WindowedMode::g_State.targetDXVersion;
                     if (dx == 9) {
-                        Hooks::InstallD3D9CreateHooksLate();
+                        InstallD3D9CreateHooksLate();
                     }
                     else if (dx == 10 || dx == 11) {
-                        Hooks::InstallDXGIHooksLate();
+                        InstallDXGIHooksLate();
                     }
                     WindowedMode::Apply(hWnd);
                 }
@@ -329,10 +330,10 @@ namespace BaseHook
                 if (WindowedMode::ShouldHandle()) {
                     int dx = WindowedMode::g_State.targetDXVersion;
                     if (dx == 9) {
-                        Hooks::InstallD3D9CreateHooksLate();
+                        InstallD3D9CreateHooksLate();
                     }
                     else if (dx == 10 || dx == 11) {
-                        Hooks::InstallDXGIHooksLate();
+                        InstallDXGIHooksLate();
                     }
                     WindowedMode::Apply(hWnd);
                 }

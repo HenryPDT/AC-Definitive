@@ -8,7 +8,7 @@
 #include <imgui.h>
 #include <atomic>
 #include <cstdint>
-#include "hooks/hooks.h"
+#include "hooks/Hooks.h"
 
 // DX9 Types
 typedef long(__stdcall* EndScene_t)(LPDIRECT3DDEVICE9);

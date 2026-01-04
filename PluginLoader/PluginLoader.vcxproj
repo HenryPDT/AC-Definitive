@@ -103,7 +103,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;KIERO_USE_MINHOOK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)src\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\include;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)include\;$(ProjectDir)src\;$(SolutionDir)AC-RE\;$(SolutionDir)AC-RE\AC2-RE\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -118,7 +118,7 @@
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;_USRDLL;KIERO_USE_MINHOOK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)src\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\include;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)include\;$(ProjectDir)src\;$(SolutionDir)AC-RE\;$(SolutionDir)AC-RE\AC2-RE\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -135,7 +135,7 @@
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_USRDLL;KIERO_USE_MINHOOK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)src\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\include;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)include\;$(ProjectDir)src\;$(SolutionDir)AC-RE\;$(SolutionDir)AC-RE\AC2-RE\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -154,7 +154,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;KIERO_USE_MINHOOK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)src\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)CommonLib\DearImGui;$(SolutionDir)BaseHook\include;$(SolutionDir)CommonLib\PluginAPI\include;$(SolutionDir)CommonLib\Utils\include\;$(SolutionDir)CommonLib\Serialization\include\;$(ProjectDir)include\;$(ProjectDir)src\;$(SolutionDir)AC-RE\;$(SolutionDir)AC-RE\AC2-RE\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -166,18 +166,18 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\PluginLoaderApp.cpp" />
-    <ClCompile Include="src\ui\MainMenu.cpp" />
-    <ClCompile Include="src\ui\SettingsModel.cpp" />
-    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\MainMenu.cpp" />
+    <ClCompile Include="src\SettingsModel.cpp" />
+    <ClCompile Include="src\PluginLoader.cpp" />
     <ClCompile Include="src\PluginLoaderConfig.cpp" />
     <ClCompile Include="src\PluginManager.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\PluginLoaderApp.h" />
-    <ClInclude Include="src\ui\MainMenu.h" />
-    <ClInclude Include="src\ui\SettingsModel.h" />
-    <ClInclude Include="src\PluginLoaderConfig.h" />
-    <ClInclude Include="src\PluginManager.h" />
+    <ClInclude Include="include\PluginLoaderApp.h" />
+    <ClInclude Include="include\MainMenu.h" />
+    <ClInclude Include="include\SettingsModel.h" />
+    <ClInclude Include="include\PluginLoaderConfig.h" />
+    <ClInclude Include="include\PluginManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CommonLib\Utils\Utils.vcxproj">

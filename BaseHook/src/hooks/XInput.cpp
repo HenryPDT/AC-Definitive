@@ -1,5 +1,6 @@
 #include "pch.h"
-#include "base.h"
+#include "core/BaseHook.h"
+#include "hooks/InputHooks.h"
 #include <xinput.h>
 
 typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);

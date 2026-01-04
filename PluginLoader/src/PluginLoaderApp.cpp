@@ -1,23 +1,23 @@
 #include "PluginLoaderApp.h"
 
-#include "base.h"
+#include "core/BaseHook.h"
 #include "CpuAffinity.h"
 #include "PluginLoaderConfig.h"
 #include "ImGuiCTX.h"
 #include "ImGuiConfigUtils.h"
 #include "KeyBind.h"
-#include "WindowedMode.h"
+#include "core/WindowedMode.h"
 #include "crash_handler.h"
 #include "log.h"
 #include "InputCapture.h"
-#include "FramerateLimiter.h"
+#include "util/FramerateLimiter.h"
 
 #include <windows.h>
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 
-#include "ui/MainMenu.h"
+#include "MainMenu.h"
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 

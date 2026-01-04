@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PluginManager.h"
-#include "ui/SettingsModel.h"
+#include "SettingsModel.h"
 
 namespace Ui
 {

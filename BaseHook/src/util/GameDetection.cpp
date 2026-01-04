@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "GameDetection.h"
-#include "RenderDetection.h"
+#include "util/GameDetection.h"
+#include "util/RenderDetection.h"
 #include <filesystem>
 #include <algorithm>
 #include <string>

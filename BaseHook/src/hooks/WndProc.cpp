@@ -1,6 +1,6 @@
 #include "pch.h"
-#include "base.h"
-#include "WindowedMode.h"
+#include "core/BaseHook.h"
+#include "core/WindowedMode.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 

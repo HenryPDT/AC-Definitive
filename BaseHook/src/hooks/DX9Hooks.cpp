@@ -1,8 +1,11 @@
 #include "pch.h"
-#include "base.h"
-#include "WindowedMode.h"
-#include "FramerateLimiter.h"
-#include "ComPtr.h"
+#include "hooks/Hooks.h"
+#include "hooks/WindowHooks.h"
+#include "hooks/InputHooks.h"
+#include "core/BaseHook.h"
+#include "core/WindowedMode.h"
+#include "util/FramerateLimiter.h"
+#include "util/ComPtr.h"
 
 namespace BaseHook
 {
