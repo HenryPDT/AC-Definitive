@@ -123,6 +123,13 @@ void TeleportCheats::DrawUI()
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off = Disabled\nPlayer = Fly (camera follows)\nCamera = Move camera only");
 
+        // Show lock player option when in Camera mode
+        if (g_config.FreeRoamTarget == 2)
+        {
+            ImGui::Checkbox("Lock Player Position", &g_config.LockPlayerInCameraMode.get());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Freeze player in place while flying camera.");
+        }
+
         ImGui::DragFloat("Fly Speed", &g_config.FlySpeed.get(), 0.1f, 0.5f, 20.0f, "%.1f");
         ImGui::SameLine();
         if (ImGui::Button("Reset##FlySpeed")) g_config.FlySpeed = 1.0f;
@@ -295,17 +302,15 @@ void TeleportCheats::UpdateFlyMode()
         player->Position.x += rightCos * speed;
         player->Position.y -= rightSin * speed;
     }
-    // Up (Numpad 9): pitch-based up/down
+    // Up (Numpad 9): simple vertical movement
     if (g_config.Key_FlyUp.get().IsPressed())
     {
-        float nInverse = (pitch >= 0) ? 1.0f : -1.0f;
-        player->Position.z += zStep * speed * nInverse;
+        player->Position.z += speed;
     }
-    // Down (Numpad 7): pitch-based down
+    // Down (Numpad 7): simple vertical movement
     if (g_config.Key_FlyDown.get().IsPressed())
     {
-        float nInverse = (pitch >= 0) ? 1.0f : -1.0f;
-        player->Position.z -= zStep * speed * nInverse;
+        player->Position.z -= speed;
     }
 }
 
@@ -412,16 +417,14 @@ void TeleportCheats::UpdateCameraFlyMode()
         camPos[0] += rightCos * speed;
         camPos[1] -= rightSin * speed;
     }
-    // Up (Numpad 9): pitch-based
+    // Up (Numpad 9): simple vertical movement
     if (g_config.Key_FlyUp.get().IsPressed())
     {
-        float nInverse = (pitch >= 0) ? 1.0f : -1.0f;
-        camPos[2] += zStep * speed * nInverse;
+        camPos[2] += speed;
     }
-    // Down (Numpad 7): pitch-based
+    // Down (Numpad 7): simple vertical movement
     if (g_config.Key_FlyDown.get().IsPressed())
     {
-        float nInverse = (pitch >= 0) ? 1.0f : -1.0f;
-        camPos[2] -= zStep * speed * nInverse;
+        camPos[2] -= speed;
     }
 }

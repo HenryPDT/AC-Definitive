@@ -144,12 +144,8 @@ void PlayerCheats::UpdateInvisibility()
 
 void PlayerCheats::UpdateNotoriety()
 {
-    // NotorietyHook handles this via xmm0 zeroing; backup write for redundancy
-    auto* bhv = AC2::GetBhvAssassin();
-    if (bhv && bhv->m_pCharacterAI && g_config.DisableNotoriety)
-    {
-        bhv->m_pCharacterAI->m_Notoriety = 0.0f;
-    }
+    // NotorietyHook handles notoriety zeroing via xmm0.
+    // No additional work needed here - the hook intercepts all notoriety reads.
 }
 
 void PlayerCheats::UpdateSpeed()

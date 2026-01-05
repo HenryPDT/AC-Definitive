@@ -303,6 +303,7 @@ Example:
 #include <optional>
 #include <variant>
 #include <string_view>
+#include "PatternScanner.h"
 
 namespace AutoAssemblerKinda {
 typedef unsigned char		byte;		// 8 bits
@@ -670,6 +671,7 @@ struct AllRegisters // Matches the order of PUSHAD
     unsigned long GetESP() { return esp_original; }
     unsigned long& GetEFLAGS() { return eflags; }
 };
+
 #endif
 class AutoAssemblerCodeHolder_Base
 {
@@ -701,7 +703,7 @@ public:
     void PresetScript_ReplaceFunctionAtItsStart(
         uintptr_t whereToInject, void* Func);
     void PresetScript_InjectJump(
-        uintptr_t whereToInject, uintptr_t targetAddr, size_t howManyBytesStolen = 5);
+        uintptr_t whereToInject, uintptr_t targetAddr, size_t howManyBytesStolen = 5, uintptr_t* pReturnAddr = nullptr);
 };
 template<class HasAutoAssemblerCodeInConstructor>
 class AutoAssembleWrapper
@@ -756,11 +758,11 @@ private:
     bool m_IsActive = false;
 };
 
-#define debug_GET_AA_SYMBOL(assemblerCtxReference, symbol) SymbolWithAnAddress* symbol = assemblerCtxReference.GetSymbol(#symbol);
+// ============================================
+// Hook Utilities
+// ============================================
 
-// --- Hook Utilities ---
-
-// Macro to define a static naked hook function and its return address variable
+// Legacy macro to define a static naked hook function and its return address variable.
 // Usage:
 // DEFINE_HOOK(MyHookName, ReturnAddressVar) {
 //     __asm {
@@ -770,30 +772,473 @@ private:
 // }
 //
 // In your Init function:
-// ReturnAddressVar = hookAddress + stolenBytes;
-// PresetScript_InjectJump(hookAddress, (uintptr_t)MyHookName, stolenBytes);
+// PresetScript_InjectJump(hookAddress, (uintptr_t)MyHookName, stolenBytes, &ReturnAddressVar);
 
 #define DEFINE_HOOK(HookName, ReturnVarName) \
     static uintptr_t ReturnVarName = 0; \
     static void __declspec(naked) HookName()
 
-// Macro to define a global variable for use in ASM blocks (mimics globalalloc)
-// Usage: GLOBAL_VAR(float, myVar, 1.0f);
-// In ASM: __asm { fld [myVar] }
-#define GLOBAL_VAR(Type, Name, InitialValue) \
-    Type Name = InitialValue
+// ============================================
+// Unified Hook System
+// ============================================
 
-// Macro to simplify activating a hook
-#define ACTIVATE_HOOK(HookClass, ...) \
-    static AutoAssembleWrapper<HookClass> HookClass##_inst(__VA_ARGS__); \
-    HookClass##_inst.Activate()
+// Forward declarations
+class HookManager;
 
-// Helper for simple data patches (replaces db/dd/dq in simple cases)
-template<typename T>
-void WriteData(uintptr_t address, T value) {
-    DWORD oldProtect;
-    VirtualProtect((void*)address, sizeof(T), PAGE_EXECUTE_READWRITE, &oldProtect);
-    *(T*)address = value;
-    VirtualProtect((void*)address, sizeof(T), oldProtect, &oldProtect);
-    FlushInstructionCache(GetCurrentProcess(), (void*)address, sizeof(T));
+// Named exit point for hooks with multiple jump targets
+struct HookExit {
+    const char* name;
+    intptr_t offset;       // Offset from resolved address
+    uintptr_t* targetPtr;  // Pointer to variable that will receive resolved address
+};
+
+// Extracted dependency from pattern (e.g., function pointer via relative call)
+// (HookDependency struct removed) -> Replaced by AOBAddress logic
+// Base Interface for all Hook Types
+class IHook {
+public:
+    virtual ~IHook() = default;
+
+    // Metadata
+    virtual const char* GetName() const = 0;
+    
+    // Core Operations
+    virtual bool Resolve(bool requireUnique = true) = 0;
+    virtual bool Install() = 0;
+    virtual bool Uninstall() = 0;
+    
+    // State Query
+    virtual bool IsResolved() const = 0;
+    virtual bool IsInstalled() const = 0;
+    virtual uintptr_t GetAddress() const = 0;
+    
+    // Config
+    virtual void SetExits(HookExit* exits, size_t count) = 0;
+
+    
+    // For automatic registration
+    bool RegisterSelf();
+};
+
+// ============================================
+// Concrete Hook Types
+// ============================================
+
+// 1. Naked Hook (x86 Only, classic assembly jmp wrapper)
+// Uses a raw assembly function with a trampoline.
+// Very efficient, but x86 only.
+class NakedHook : public IHook {
+public:
+    using NakedFuncPtr = void(*)();
+    
+    struct Descriptor {
+        const char* name;
+        const char* aobSignature;
+        intptr_t aobOffset;
+        size_t stolenBytes;
+        NakedFuncPtr hookFunction;
+        uintptr_t* returnAddress;
+    };
+
+    NakedHook(const Descriptor& desc);
+    ~NakedHook();
+
+    const char* GetName() const override { return m_Desc.name; }
+    bool Resolve(bool requireUnique = true) override;
+    bool Install() override;
+    bool Uninstall() override;
+    
+    bool IsResolved() const override { return m_Resolved; }
+    bool IsInstalled() const override { return m_Installed; }
+    uintptr_t GetAddress() const override { return m_ResolvedAddress; }
+
+    void SetExits(HookExit* exits, size_t count) override;
+
+
+private:
+    Descriptor m_Desc;
+    uintptr_t m_ResolvedAddress = 0;
+    bool m_Resolved = false;
+    bool m_Installed = false;
+    void* m_WrapperInstance = nullptr; // AOBHookWrapper*
+    
+    HookExit* m_Exits = nullptr;
+    size_t m_ExitCount = 0;
+
+};
+
+// 2. CCode Hook (Cross-Platform / Easier Logic)
+// Uses AutoAssembler engine to inject a C++ function call.
+// Works on x86 and x64.
+class CCodeHook : public IHook {
+public:
+    using CCodeFuncPtr = void(*)(AllRegisters*);
+
+    struct Descriptor {
+        const char* name;
+        const char* aobSignature;
+        intptr_t aobOffset;
+        size_t stolenBytes;
+        CCodeFuncPtr paramFunction;
+        bool executeStolenBytes;
+    };
+
+    CCodeHook(const Descriptor& desc);
+    ~CCodeHook();
+
+    // IHook Interface
+    const char* GetName() const override { return m_Desc.name; }
+    bool Resolve(bool requireUnique = true) override;
+    bool Install() override;
+    bool Uninstall() override;
+
+    bool IsResolved() const override { return m_Resolved; }
+    bool IsInstalled() const override;
+    uintptr_t GetAddress() const override { return m_ResolvedAddress; }
+    
+    void SetExits(HookExit* exits, size_t count) override;
+
+
+private:
+    Descriptor m_Desc;
+    uintptr_t m_ResolvedAddress = 0;
+    bool m_Resolved = false;
+    
+    // Internal Logic Holder
+    struct HookLogic;
+    AutoAssembleWrapper<HookLogic>* m_Wrapper = nullptr; 
+
+    HookExit* m_Exits = nullptr;
+    size_t m_ExitCount = 0;
+
+};
+
+// 3. Data Patch (Write bytes)
+class DataPatch : public IHook {
+public:
+    struct Descriptor {
+        const char* name;
+        const char* aobSignature;
+        intptr_t aobOffset;
+        const uint8_t* data;
+        size_t size;
+        bool allSections;  // Set to true to scan data sections (for strings)
+    };
+
+    DataPatch(const Descriptor& desc);
+
+    const char* GetName() const override { return m_Desc.name; }
+    bool Resolve(bool requireUnique = true) override;
+    bool Install() override;
+    bool Uninstall() override;
+
+    bool IsResolved() const override { return m_Resolved; }
+    bool IsInstalled() const override { return m_Installed; }
+    uintptr_t GetAddress() const override { return m_ResolvedAddress; }
+
+    void SetExits(HookExit* exits, size_t count) override {}
+
+
+private:
+    Descriptor m_Desc;
+    uintptr_t m_ResolvedAddress = 0;
+    bool m_Resolved = false;
+    bool m_Installed = false;
+    std::vector<uint8_t> m_OriginalBytes;
+};
+
+// 4. AOBAddress (Unified Address Resolver)
+// Replaces HookDependency. Can scan signature OR resolve relative to another hook.
+class AOBAddress : public IHook {
+public:
+    struct Descriptor {
+        const char* name;
+        const char* moduleName;
+        const char* sectionName;
+        const char* signature;       // IF SET: Scan this.
+        const char* parentHookName;  // IF SET: Get address from this Hook.
+        intptr_t offset;             // Applied to result of Scan or Parent.
+        bool resolveRelative;        // If true, resolve as relative call/jmp/mov.
+        uint8_t instructionSize;     // e.g. 5
+        uint8_t relativeOffset;      // e.g. 1
+        int dereferenceCount;        // How many times to dereference the result
+        uintptr_t* targetPtr;        // Pointer to variable that will receive resolved address
+    };
+
+    AOBAddress(const Descriptor& desc);
+
+    const char* GetName() const override { return m_Desc.name; }
+    bool Resolve(bool requireUnique = true) override;
+    bool Install() override { return true; } // Nothing to install
+    bool Uninstall() override { return true; } // Nothing to uninstall
+
+    bool IsResolved() const override { return m_Resolved; }
+    bool IsInstalled() const override { return true; }
+    uintptr_t GetAddress() const override { return m_ResolvedAddress; }
+
+    void SetExits(HookExit* exits, size_t count) override {}
+
+private:
+    Descriptor m_Desc;
+    uintptr_t m_ResolvedAddress = 0;
+    bool m_Resolved = false;
+};
+
+// ============================================
+// Hook Manager
+// ============================================
+class HookManager {
+public:
+    static void Register(IHook* hook);
+    static IHook* Get(const char* name);
+    
+    static size_t ResolveAll(bool requireUnique = true);
+    static size_t InstallAll();
+    static void UninstallAll();
+    
+    // Convenience
+    static bool Resolve(IHook* hook, bool requireUnique = true);
+    static void Toggle(IHook* hook, bool enable);
+    
+    static const std::vector<IHook*>& GetAll();
+
+    // Convenience: ResolveAll + InstallAll
+    static size_t ResolveAndInstallAll(bool requireUnique = true);
+    
+    // Compatibility / Single Hook Control
+    static bool Install(IHook* hook) { return hook ? hook->Install() : false; }
+    static bool Uninstall(IHook* hook) { return hook ? hook->Uninstall() : false; }
+
+private:
+    static std::vector<IHook*>& GetHooks();
+};
+
+// ============================================
+// Macros - The User-Facing API
+// ============================================
+
+// -------------------------------------------------------------------------
+// DEFINE_AOB_HOOK (Naked x86)
+// -------------------------------------------------------------------------
+// Kept for backward compat / pure asm usage.
+// Only valid on x86. On x64 this should ideally error or fallback (but naked isnt supported on x64).
+#ifndef _WIN64
+#define DEFINE_AOB_HOOK(HookName, Signature, Offset, StolenBytes) \
+    static uintptr_t HookName##_Return = 0; \
+    static void HookName##_Func(); \
+    static NakedHook::Descriptor HookName##_Config = { \
+        #HookName, Signature, Offset, StolenBytes, &HookName##_Func, &HookName##_Return \
+    }; \
+    static NakedHook HookName##_Descriptor(HookName##_Config); \
+    static bool HookName##_Reg = HookName##_Descriptor.RegisterSelf(); \
+    static void HookName##_Func()
+
+#define HOOK_IMPL(HookName) static void __declspec(naked) HookName##_Func()
+#else
+// On x64, if user tries to use this macro, we can't implement it purely using naked.
+// They should use DEFINE_CPP_HOOK.
+#define DEFINE_AOB_HOOK(HookName, Signature, Offset, StolenBytes) \
+    static_assert(false, "DEFINE_AOB_HOOK (Naked) is not supported on x64. Use DEFINE_CPP_HOOK instead.");
+#endif
+
+// -------------------------------------------------------------------------
+// DEFINE_CPP_HOOK (C++ Logic - Works on x86/x64)
+// -------------------------------------------------------------------------
+// Usage:
+//   DEFINE_CPP_HOOK(MyHook, "AOB...", 0, 5)        // Execute stolen bytes (Default)
+//   DEFINE_CPP_HOOK(MyHook, "AOB...", 0, 5, false) // Don't execute stolen bytes (Replace)
+//
+// The optional last argument controls 'executeStolenBytes'.
+// (true, ##__VA_ARGS__) uses the comma operator:
+//   - If empty: (true) -> true
+//   - If false: (true, false) -> false
+#define DEFINE_CPP_HOOK(HookName, Signature, Offset, StolenBytes, ...) \
+    static void HookName##_Func(AllRegisters* params); \
+    static CCodeHook::Descriptor HookName##_Config = { \
+        #HookName, Signature, Offset, StolenBytes, &HookName##_Func, \
+        (true, ##__VA_ARGS__) \
+    }; \
+    static CCodeHook HookName##_Descriptor(HookName##_Config); \
+    static bool HookName##_Reg = HookName##_Descriptor.RegisterSelf(); \
+    static void HookName##_Func(AllRegisters* params)
+
+// -------------------------------------------------------------------------
+// DEFINE_DATA_PATCH - Unified data patching macro
+// -------------------------------------------------------------------------
+// Uses auto to deduce type from the value. Cast to specify type:
+//   DEFINE_DATA_PATCH(ShadowPatch, "C7 41 20 ?? ?? ??", 3, (int32_t)4096);
+//   DEFINE_DATA_PATCH(FloatPatch, "F3 0F 10 05 ?? ?? ??", 4, 1.5f);
+//   DEFINE_DATA_PATCH(BytePatch, "89 45 E8", 0, (uint8_t)0x90);
+//   DEFINE_DATA_PATCH(StringPatch, "my string", 0, (uint8_t)0x00, true);  // allSections=true
+#define DEFINE_DATA_PATCH(PatchName, Signature, Offset, Value, ...) \
+    static const auto PatchName##_Value = Value; \
+    static DataPatch::Descriptor PatchName##_Config = { \
+        #PatchName, Signature, Offset, (const uint8_t*)&PatchName##_Value, sizeof(PatchName##_Value), \
+        (false, ##__VA_ARGS__)  /* Default false, or use provided value */ \
+    }; \
+    static DataPatch PatchName##_Descriptor(PatchName##_Config); \
+    static bool PatchName##_Reg = PatchName##_Descriptor.RegisterSelf()
+
+
+// =========================================================================
+// UNIFIED ADDRESS RESOLUTION SYSTEM
+// =========================================================================
+// Single macro for all address resolution needs.
+//
+// Usage:
+//   DEFINE_ADDRESS(Name, Source, Offset, Mode, Target)
+//
+// Parameters:
+//   Name   - Unique identifier for this address
+//   Source - Pattern string "8B 46..." OR parent reference "@ParentName"
+//   Offset - Byte offset from resolved address
+//   Mode   - RAW (just offset), CALL (resolve call/jmp), DEREF (dereference)
+//   Target - Pointer to store result (or nullptr)
+//
+// Examples:
+//   // Scan pattern, store raw address
+//   DEFINE_ADDRESS(AllocBase, "52 6A 10 68 B0 05 00 00", 0, RAW, nullptr);
+//
+//   // Derive from parent, resolve relative CALL target
+//   DEFINE_ADDRESS(GetNewDescr, "@AllocBase", 0x08, CALL, &fn);
+//
+//   // Derive from parent, dereference pointer (MOV [addr])
+//   DEFINE_ADDRESS(DescriptorVar, "@AllocBase", -0x04, DEREF, &ptr);
+// =========================================================================
+
+// Address resolution modes
+enum AddrMode : uint8_t {
+    ADDR_RAW      = 0,  // Just apply offset, no processing
+    ADDR_RELATIVE = 1,  // Resolve relative call/jmp: target = base + rel32 + instructionSize
+    ADDR_POINTER  = 2   // Dereference: target = *(uintptr_t*)(base + offset)
+};
+
+// Shorthand (safe names that don't conflict with Windows macros)
+#define RAW       ADDR_RAW
+#define CALL      ADDR_RELATIVE
+#define DEREF     ADDR_POINTER
+
+// Compile-time string helpers
+namespace _AddrHelper {
+    constexpr bool IsParent(const char* s) { return s && s[0] == '@'; }
+    constexpr const char* GetSignature(const char* s) { return IsParent(s) ? nullptr : s; }
+    constexpr const char* GetParent(const char* s) { return IsParent(s) ? s + 1 : nullptr; }
+    
+    // Mode to descriptor fields (use int to accept macro expansions)
+    constexpr bool IsRelative(int m) { return m == ADDR_RELATIVE; }
+    constexpr uint8_t InstrSize(int m) { return m == ADDR_RELATIVE ? 5 : 0; }
+    constexpr uint8_t RelOffset(int m) { return m == ADDR_RELATIVE ? 1 : 0; }
+    constexpr int DerefCount(int m) { return m == ADDR_POINTER ? 1 : 0; }
 }
+
+// The unified macro
+#define DEFINE_ADDRESS(Name, Source, Offset, Mode, Target) \
+    static AOBAddress::Descriptor Name##_Cfg = { \
+        #Name, nullptr, nullptr, \
+        _AddrHelper::GetSignature(Source), _AddrHelper::GetParent(Source), \
+        Offset, \
+        _AddrHelper::IsRelative(Mode), _AddrHelper::InstrSize(Mode), _AddrHelper::RelOffset(Mode), \
+        _AddrHelper::DerefCount(Mode), \
+        Target \
+    }; \
+    static AOBAddress Name##_Desc(Name##_Cfg); \
+    static bool Name##_Reg = Name##_Desc.RegisterSelf()
+
+// =========================================================================
+// LEGACY COMPATIBILITY MACROS (Deprecated - use DEFINE_ADDRESS instead)
+// =========================================================================
+// These are kept for backward compatibility with existing code.
+// New code should use DEFINE_ADDRESS.
+
+#define DEFINE_AOB_ADDRESS(Name, Sig, Off, Ptr)         DEFINE_ADDRESS(Name, Sig, Off, RAW, Ptr)
+#define DEFINE_AOB_RELATIVE(Name, Sig, Off, Ptr)        DEFINE_ADDRESS(Name, Sig, Off, RELATIVE, Ptr)
+#define DEFINE_AOB_POINTER(Name, Sig, Off, Ptr)         DEFINE_ADDRESS(Name, Sig, Off, POINTER, Ptr)
+#define DEFINE_HOOK_RELATIVE(Name, Parent, Off, Ptr)    DEFINE_ADDRESS(Name, "@" #Parent, Off, RELATIVE, Ptr)
+#define DEFINE_PARENT_OFFSET(Name, Parent, Off, Ptr)    DEFINE_ADDRESS(Name, "@" #Parent, Off, RAW, Ptr)
+#define DEFINE_PARENT_RELATIVE(Name, Parent, Off, Ptr)  DEFINE_ADDRESS(Name, "@" #Parent, Off, RELATIVE, Ptr)
+#define DEFINE_PARENT_POINTER(Name, Parent, Off, Ptr)   DEFINE_ADDRESS(Name, "@" #Parent, Off, POINTER, Ptr)
+
+// Module scan variant (not commonly used, kept for completeness)
+#define DEFINE_AOB_ADDRESS_MODULE(Name, ModName, Sig, Off, Ptr) \
+    static AOBAddress::Descriptor Name##_Cfg = { #Name, ModName, nullptr, Sig, nullptr, Off, false, 0, 0, 0, Ptr }; \
+    static AOBAddress Name##_Desc(Name##_Cfg); \
+    static bool Name##_Reg = Name##_Desc.RegisterSelf()
+
+
+// -------------------------------------------------------------------------
+// EXITS / DEPENDENCIES Helper Macros
+// -------------------------------------------------------------------------
+// These macros need to access the _Instance static variable created above.
+// They assume 'HookName' matches what was passed to DEFINE_...
+
+// Explicit macro definitions for up to 5 pairs (10 arguments)
+#define DEFINE_EXITS_1(HookName, N1, O1) \
+    static uintptr_t HookName##_##N1 = 0; \
+    static HookExit HookName##_Exits[] = { { #N1, O1, &HookName##_##N1 } }; \
+    static bool HookName##_ExitsLinked = (HookName##_Descriptor.SetExits(HookName##_Exits, 1), true)
+
+#define DEFINE_EXITS_2(HookName, N1, O1, N2, O2) \
+    static uintptr_t HookName##_##N1 = 0; \
+    static uintptr_t HookName##_##N2 = 0; \
+    static HookExit HookName##_Exits[] = { \
+        { #N1, O1, &HookName##_##N1 }, \
+        { #N2, O2, &HookName##_##N2 } \
+    }; \
+    static bool HookName##_ExitsLinked = (HookName##_Descriptor.SetExits(HookName##_Exits, 2), true)
+
+#define DEFINE_EXITS_3(HookName, N1, O1, N2, O2, N3, O3) \
+    static uintptr_t HookName##_##N1 = 0; \
+    static uintptr_t HookName##_##N2 = 0; \
+    static uintptr_t HookName##_##N3 = 0; \
+    static HookExit HookName##_Exits[] = { \
+        { #N1, O1, &HookName##_##N1 }, \
+        { #N2, O2, &HookName##_##N2 }, \
+        { #N3, O3, &HookName##_##N3 } \
+    }; \
+    static bool HookName##_ExitsLinked = (HookName##_Descriptor.SetExits(HookName##_Exits, 3), true)
+
+#define DEFINE_EXITS_4(HookName, N1, O1, N2, O2, N3, O3, N4, O4) \
+    static uintptr_t HookName##_##N1 = 0; \
+    static uintptr_t HookName##_##N2 = 0; \
+    static uintptr_t HookName##_##N3 = 0; \
+    static uintptr_t HookName##_##N4 = 0; \
+    static HookExit HookName##_Exits[] = { \
+        { #N1, O1, &HookName##_##N1 }, \
+        { #N2, O2, &HookName##_##N2 }, \
+        { #N3, O3, &HookName##_##N3 }, \
+        { #N4, O4, &HookName##_##N4 } \
+    }; \
+    static bool HookName##_ExitsLinked = (HookName##_Descriptor.SetExits(HookName##_Exits, 4), true)
+
+#define DEFINE_EXITS_5(HookName, N1, O1, N2, O2, N3, O3, N4, O4, N5, O5) \
+    static uintptr_t HookName##_##N1 = 0; \
+    static uintptr_t HookName##_##N2 = 0; \
+    static uintptr_t HookName##_##N3 = 0; \
+    static uintptr_t HookName##_##N4 = 0; \
+    static uintptr_t HookName##_##N5 = 0; \
+    static HookExit HookName##_Exits[] = { \
+        { #N1, O1, &HookName##_##N1 }, \
+        { #N2, O2, &HookName##_##N2 }, \
+        { #N3, O3, &HookName##_##N3 }, \
+        { #N4, O4, &HookName##_##N4 }, \
+        { #N5, O5, &HookName##_##N5 } \
+    }; \
+    static bool HookName##_ExitsLinked = (HookName##_Descriptor.SetExits(HookName##_Exits, 5), true)
+
+// Dispatcher logic
+#define _AAK_EXPAND_EXITS(...) __VA_ARGS__
+#define _AAK_GET_MACRO_EXITS(_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,NAME,...) NAME
+
+// Main Macro
+#define DEFINE_EXITS(HookName, ...) \
+    _AAK_EXPAND_EXITS(_AAK_GET_MACRO_EXITS(__VA_ARGS__, \
+        DEFINE_EXITS_5, _u9, \
+        DEFINE_EXITS_4, _u7, \
+        DEFINE_EXITS_3, _u5, \
+        DEFINE_EXITS_2, _u3, \
+        DEFINE_EXITS_1, _u1 \
+    )(HookName, __VA_ARGS__))
+
+// Helper Accessor
+#define HOOK_RETURN(HookName) HookName##_Return
+

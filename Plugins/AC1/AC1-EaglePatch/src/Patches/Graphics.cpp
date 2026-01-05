@@ -7,25 +7,46 @@
 #include <cstring>
 #include "log.h"
 
-using namespace Utils;
+using namespace AutoAssemblerKinda;
 
 namespace AC1EaglePatch
 {
-    struct sAddresses {
-        static uintptr_t MSAA_1;
-        static uintptr_t MSAA_2;
-        static uintptr_t MSAA_3;
-        static uintptr_t DX10_Check1;
-        static uintptr_t DX10_Check2;
-        static uintptr_t DX10_Hook;
-    };
+    // Helpers
+    struct Nop3 { uint8_t v[3] = { 0x90, 0x90, 0x90 }; };
 
-    uintptr_t sAddresses::MSAA_1 = 0;
-    uintptr_t sAddresses::MSAA_2 = 0;
-    uintptr_t sAddresses::MSAA_3 = 0;
-    uintptr_t sAddresses::DX10_Check1 = 0;
-    uintptr_t sAddresses::DX10_Check2 = 0;
-    uintptr_t sAddresses::DX10_Hook = 0;
+    // --- MSAA Patches ---
+
+    // MSAA_Patch1: JMP short (0xEB) at offset +6
+    // Pattern: 3B 81 84 00 00 00 72 17 E8
+    DEFINE_DATA_PATCH(MSAA_Patch1, "3B 81 84 00 00 00 72 17 E8", 6, (uint8_t)0xEB);
+
+    // MSAA_Hook (Patch2): Replaces comparison with "mov ecx, 1"
+    // Pattern: 3B 8A 84 00 00 00
+    // "3B 8A 84 00 00 00"
+    DEFINE_AOB_HOOK(MSAA_Hook, "3B 8A 84 00 00 00", 0, 6);
+    DEFINE_EXITS(MSAA_Hook, Exit, 6);
+
+    HOOK_IMPL(MSAA_Hook)
+    {
+        __asm {
+            mov ecx, 1
+            jmp [MSAA_Hook_Exit]
+        }
+    }
+
+    // MSAA_Patch3: NOPs at offset +0x0B
+    // Pattern: Same as MSAA_Hook (relative)
+    DEFINE_DATA_PATCH(MSAA_Patch3, "3B 8A 84 00 00 00", 0x0B, Nop3{});
+
+
+    // --- DX10 Patches ---
+    
+    // Pattern for DX10 Checks & Functions: 6A 01 89 06 8B 08
+    DEFINE_ADDRESS(DX10_Base, "6A 01 89 06 8B 08", 0, RAW, nullptr);
+
+    // Check1 at +1, Check2 at +0x43. Patch with 0x00.
+    DEFINE_DATA_PATCH(DX10_Patch1, "6A 01 89 06 8B 08", 1, (uint8_t)0x00);
+    DEFINE_DATA_PATCH(DX10_Patch2, "6A 01 89 06 8B 08", 0x43, (uint8_t)0x00);
 
     struct D3D10ResolutionContainer;
     // Pointers to game functions
@@ -35,115 +56,27 @@ namespace AC1EaglePatch
     t_GetDisplayModes fnGetDisplayModes = nullptr;
     t_FindCurrentResolutionMode fnFindCurrentResolutionMode = nullptr;
 
-    // Hook Wrappers
-    DEFINE_HOOK(MSAA_Patch2_Wrapper, MSAA_Patch2_Return)
-    {
-        __asm {
-            mov ecx, 1
-            jmp [MSAA_Patch2_Return]
-        }
-    }
-    
+    // fnGetDisplayModes at -0x0E (Address of function)
+    DEFINE_ADDRESS(GetDisplayModesAddr, "@DX10_Base", -0x0E, RAW, (uintptr_t*)&fnGetDisplayModes);
+
+    // fnFindCurrentResolutionMode at +0x5A (Relative Call)
+    DEFINE_ADDRESS(FindCurrentResAddr, "@DX10_Base", 0x5A, CALL, (uintptr_t*)&fnFindCurrentResolutionMode);
+
     // Forward declaration
     void __fastcall Hook_GetDisplayModes(D3D10ResolutionContainer* thisPtr, void* /*edx*/, IDXGIOutput* a1);
 
-    DEFINE_HOOK(Hook_GetDisplayModes_Wrapper, DX10_Hook_Return)
+    // DX10_Hook
+    // Pattern: E8 DE 78 FC FF
+    DEFINE_AOB_HOOK(DX10_Hook, "E8 DE 78 FC FF", 0, 5);
+    DEFINE_EXITS(DX10_Hook, Exit, 5);
+
+    HOOK_IMPL(DX10_Hook)
     {
         __asm {
             call Hook_GetDisplayModes
-            jmp [DX10_Hook_Return]
+            jmp [DX10_Hook_Exit]
         }
     }
-
-    namespace
-    {
-        bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
-        {
-            // MSAA Patches
-            
-            // MSAA_1: 3B 81 84 00 00 00 72 17
-            // Target is at 72 17 (+0x06 from match)
-            auto msaa1 = PatternScanner::ScanMain("3B 81 84 00 00 00 72 17 E8");
-            if (msaa1) sAddresses::MSAA_1 = msaa1.Offset(0x06).address;
-
-            // MSAA_2: 3B 8A 84 00 00 00
-            auto msaa2 = PatternScanner::ScanMain("3B 8A 84 00 00 00");
-            if (msaa2) {
-                sAddresses::MSAA_2 = msaa2.address;
-                sAddresses::MSAA_3 = msaa2.Offset(0x0B).address;
-                MSAA_Patch2_Return = msaa2.address + 0x06;
-            }
-
-            if (version == GameVersion::Version1) // DX10
-            {
-                // DX10 Checks & Functions: 6A 01 89 06 8B 08
-                // Match at 3BAD2E
-                auto check = PatternScanner::ScanMain("6A 01 89 06 8B 08");
-                if (check) {
-                    // DX10_Check1 (3BAD2E+1) is at +0x01
-                    sAddresses::DX10_Check1 = check.Offset(0x01).address;
-                    
-                    // DX10_Check2 (3BAD70+1) is at +0x43 (3BAD70 - 3BAD2E = 0x42)
-                    sAddresses::DX10_Check2 = check.Offset(0x43).address;
-
-                    // fnGetDisplayModes (3BAD20) is at -0x0E
-                    fnGetDisplayModes = check.Offset(-0x0E).As<t_GetDisplayModes>();
-
-                    // fnFindCurrentResolutionMode is called at 3BAD88 (Match + 0x5A)
-                    auto callSite = check.Offset(0x5A);
-                    if (*callSite.As<uint8_t*>() == 0xE8) {
-                        fnFindCurrentResolutionMode = (t_FindCurrentResolutionMode)callSite.ResolveRelative().address;
-                    }
-                }
-
-                // DX10_Hook: E8 DE 78 FC FF
-                // Match at 3F343D
-                auto hook = PatternScanner::ScanMain("E8 DE 78 FC FF");
-                if (hook) {
-                    sAddresses::DX10_Hook = hook.address;
-                    DX10_Hook_Return = hook.address + 0x05;
-                }
-            }
-
-            if (version == GameVersion::Version1)
-                return sAddresses::MSAA_1 && sAddresses::MSAA_2 && sAddresses::DX10_Check1 && sAddresses::DX10_Hook;
-            else
-                return sAddresses::MSAA_1 && sAddresses::MSAA_2;
-        }
-    }
-
-    // --- Multisampling Patch ---
-    struct MultisamplingPatch : AutoAssemblerCodeHolder_Base
-    {
-        MultisamplingPatch(uintptr_t addr1, uintptr_t addr2, uintptr_t addr3) {
-            DEFINE_ADDR(ms1, addr1);
-            DEFINE_ADDR(ms3, addr3);
-
-            // Patch 1: JMP short (0xEB)
-            ms1 = { db(0xEB) };
-
-            // Patch 2: MOV ECX, 1; NOP (B9 01 00 00 00 90)
-            // Replaced with InjectJump to MSAA_Patch2_Wrapper
-            // Stolen bytes: 6 (cmp instruction). InjectJump (5) + NOP (1).
-            PresetScript_InjectJump(addr2, (uintptr_t)&MSAA_Patch2_Wrapper, 0x06);
-
-            // Patch 3: NOPs (3 bytes)
-            ms3 = { nop(0x03) };
-        }
-    };
-
-    // --- DX10 Duplicate Resolutions Fix ---
-    struct DX10ResolutionPatch : AutoAssemblerCodeHolder_Base
-    {
-        DX10ResolutionPatch(uintptr_t interlacedCheck1, uintptr_t interlacedCheck2) {
-            DEFINE_ADDR(chk1, interlacedCheck1);
-            DEFINE_ADDR(chk2, interlacedCheck2);
-
-            // Disable interlaced checks (set bytes to 0)
-            chk1 = { db(0x00) };
-            chk2 = { db(0x00) };
-        }
-    };
 
     struct D3D10ResolutionContainer
     {
@@ -204,34 +137,22 @@ namespace AC1EaglePatch
         thisPtr->FindCurrentResolutionMode(thisPtr->m_width, thisPtr->m_height, thisPtr->m_refreshRate);
     }
     
-    struct DX10GetDisplayModesHook : AutoAssemblerCodeHolder_Base
-    {
-        DX10GetDisplayModesHook(uintptr_t hookAddress) {
-            PresetScript_InjectJump(hookAddress, (uintptr_t)&Hook_GetDisplayModes_Wrapper);
-        }
-    };
-
     void InitGraphics(uintptr_t baseAddr, GameVersion version, bool enableMSAAFix, bool fixDX10Resolution)
     {
-        if (!ResolveAddresses(baseAddr, version))
-            return;
-
+        // 1. MSAA Fix
         if (enableMSAAFix)
         {
-            // Apply Multisampling Patch
-            static AutoAssembleWrapper<MultisamplingPatch> msPatch(sAddresses::MSAA_1, sAddresses::MSAA_2, sAddresses::MSAA_3);
-            msPatch.Activate();
+            HookManager::Install(&MSAA_Patch1_Descriptor);
+            HookManager::Install(&MSAA_Hook_Descriptor);
+            HookManager::Install(&MSAA_Patch3_Descriptor);
         }
 
-        // Apply DX10 Duplicate Resolution Fix only if addresses were found (i.e., we are on DX10 version)
-        if (fixDX10Resolution && sAddresses::DX10_Hook != 0)
+        // 2. DX10 Resolution Fix
+        if (fixDX10Resolution && version == GameVersion::Version1)
         {
-            static AutoAssembleWrapper<DX10ResolutionPatch> resPatch(sAddresses::DX10_Check1, sAddresses::DX10_Check2);
-            resPatch.Activate();
-
-            static AutoAssembleWrapper<DX10GetDisplayModesHook> hookPatch(sAddresses::DX10_Hook);
-            hookPatch.Activate();
-
+            HookManager::Install(&DX10_Patch1_Descriptor);
+            HookManager::Install(&DX10_Patch2_Descriptor);
+            HookManager::Install(&DX10_Hook_Descriptor);
             LOG_INFO("[EaglePatch] Graphics fixes applied (DX10).");
         }
     }

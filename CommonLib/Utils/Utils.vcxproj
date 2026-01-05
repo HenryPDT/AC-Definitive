@@ -94,7 +94,7 @@
     <ClCompile Include="src\ImGuiConfigUtils.cpp" />
     <ClCompile Include="src\CpuAffinity.cpp" />
     <ClCompile Include="src\ImGuiConsole.cpp" />
-    <ClCompile Include="src\PatternScanner.cpp" />
+
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\crash_handler.h" />
@@ -104,7 +104,7 @@
     <ClInclude Include="include\ImGuiConfigUtils.h" />
     <ClInclude Include="include\CpuAffinity.h" />
     <ClInclude Include="include\ImGuiConsole.h" />
-    <ClInclude Include="include\PatternScanner.h" />
+
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

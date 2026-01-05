@@ -2,8 +2,10 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClInclude Include="include\AutoAssemblerKinda\AutoAssemblerKinda.h" />
+    <ClInclude Include="include\PatternScanner.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\AutoAssemblerKinda.cpp" />
+    <ClCompile Include="src\PatternScanner.cpp" />
   </ItemGroup>
 </Project>

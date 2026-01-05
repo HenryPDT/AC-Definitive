@@ -1,30 +1,27 @@
 #include "EaglePatch.h"
 #include <AutoAssemblerKinda.h>
-#include <PatternScanner.h>
 #include "log.h"
 
 namespace AC2EaglePatch
 {
-    struct SkipIntroHook : AutoAssemblerCodeHolder_Base
-    {
-        SkipIntroHook(uintptr_t address) {
-            DEFINE_ADDR(hook_addr, address);
-            // Patch 0xEB (JMP short)
-            hook_addr = { db(0xEB) };
-        }
-    };
+    // ==========================================================================
+    // Skip Intro Videos
+    // ==========================================================================
+    // Patches the conditional jump (JNZ -> JMP) to always skip intro video playback.
+    // Pattern: 75 0C E8 ?? ?? ?? 00  (JNZ +0x0C followed by a CALL)
+    // Patch:   EB                    (JMP short - unconditional)
+    // ==========================================================================
+
+    DEFINE_DATA_PATCH(SkipIntro, "75 0C E8 ?? ?? ?? 00", 0, (uint8_t)0xEB);
 
     void InitSkipIntro(uintptr_t baseAddr, GameVersion version)
     {
-        auto skipAddr = Utils::PatternScanner::ScanMain("75 0C E8 ?? ?? ?? 00");
-
-        if (skipAddr)
-        {
-            static AutoAssembleWrapper<SkipIntroHook> hook(skipAddr.As<uintptr_t>());
-            hook.Activate();
-            LOG_INFO("[EaglePatch] Skip Intro patch applied.");
-        }
-        else
+        if (!HookManager::Resolve(&SkipIntro_Descriptor)) {
             LOG_INFO("[EaglePatch] SkipIntro: Pattern NOT found!");
+            return;
+        }
+
+        HookManager::Install(&SkipIntro_Descriptor);
+        LOG_INFO("[EaglePatch] Skip Intro patch applied.");
     }
 }
