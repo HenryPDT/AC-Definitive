@@ -5,7 +5,7 @@
 #include <cstring>
 #include "log.h"
 
-using namespace Utils;
+using namespace AutoAssemblerKinda;
 
 namespace AC1EaglePatch
 {
@@ -40,8 +40,6 @@ namespace AC1EaglePatch
         static uintptr_t Pad_ScaleStickValues;
         static uintptr_t PadXenon_ctor;
         static uintptr_t PadProxyPC_AddPad;
-        static uintptr_t _addXenonJoy_Patch;
-        static uintptr_t _PadProxyPC_Patch;
         static uint32_t* _descriptor_var;
     };
 
@@ -49,15 +47,59 @@ namespace AC1EaglePatch
     uintptr_t sAddresses::Pad_ScaleStickValues = 0;
     uintptr_t sAddresses::PadXenon_ctor = 0;
     uintptr_t sAddresses::PadProxyPC_AddPad = 0;
-    uintptr_t sAddresses::_addXenonJoy_Patch = 0;
-    uintptr_t sAddresses::_PadProxyPC_Patch = 0;
     uint32_t* sAddresses::_descriptor_var = nullptr;
+
+    // --- Address Definitions ---
+
+    // 1. Pad_ScaleStickValues & Pad_UpdateTimeStamps
+    // Pattern: mov ecx,[esi+500h]; lea eax,[esp+0Ch]
+    DEFINE_ADDRESS(Pad_BasePattern1, "8B 8E 00 05 00 00 8D", 0, RAW, nullptr);
+    DEFINE_ADDRESS(Pad_ScaleStickValues, "@Pad_BasePattern1", 0x23, CALL, &sAddresses::Pad_ScaleStickValues);
+    DEFINE_ADDRESS(Pad_UpdateTimeStamps, "@Pad_BasePattern1", 0x2A, CALL, &sAddresses::Pad_UpdateTimeStamps);
+
+    // 2. AddXenonJoy Hook Location
+    // Pattern: mov eax,[esi+04]; mov ecx,[eax]; mov edx,[ecx]; push 1
+    // We use DEFINE_AOB_HOOK directly with the signature below.
+
+    // 3. PadProxyPC Hook Location
+    // Pattern: push esi; mov esi,ecx; mov eax,[esi+504h]; cmp eax,04
+    // We use DEFINE_AOB_HOOK directly with the signature below.
+
+    // 4. PadXenon_ctor, Allocators, Descriptors
+    // Pattern: push ecx; push 10h; push 520h
+    DEFINE_ADDRESS(Pad_BasePattern4, "51 6A 10 68 20 05 00 00", 0, RAW, nullptr);
+
+    // Offset -0x06: mov ecx, [_descriptor_var] (Opcode 8B 0D + Address) -> Disp32 at -0x04
+    DEFINE_ADDRESS(DescVar, "@Pad_BasePattern4", -0x04, DEREF, (uintptr_t*)&sAddresses::_descriptor_var);
+
+    // Offset 0x08: call ac_getNewDescriptor
+    DEFINE_ADDRESS(GetNewDesc, "@Pad_BasePattern4", 0x08, CALL, (uintptr_t*)&ac_getNewDescriptor);
+
+    // Offset 0x1A: call ac_allocate
+    DEFINE_ADDRESS(AcAlloc, "@Pad_BasePattern4", 0x1A, CALL, (uintptr_t*)&ac_allocate);
+
+    // Offset 0x38: call PadXenon_ctor
+    DEFINE_ADDRESS(XenonCtor, "@Pad_BasePattern4", 0x38, CALL, &sAddresses::PadXenon_ctor);
+
+    // Offset 0x5B: call PadProxyPC_AddPad
+    DEFINE_ADDRESS(ProxyAddPad, "@Pad_BasePattern4", 0x5B, CALL, &sAddresses::PadProxyPC_AddPad);
+
+    // Offset 0x69: call ac_delete
+    DEFINE_ADDRESS(AcDel, "@Pad_BasePattern4", 0x69, CALL, (uintptr_t*)&ac_delete);
+
 
     // Forward declaration
     void __cdecl AddXenonPad();
 
-    // Hook Wrapper
-    DEFINE_HOOK(AddXenonJoy_HookFunction, AddXenonJoy_Return) {
+    // --- Hooks ---
+
+    // 2. AddXenonJoy Hook
+    // Pattern: mov eax,[esi+04]; mov ecx,[eax]; mov edx,[ecx]; push 1
+    // "8B 46 04 8B 08 8B 11 6A"
+    DEFINE_AOB_HOOK(AddXenonJoy, "8B 46 04 8B 08 8B 11 6A", 0, 5);
+    DEFINE_EXITS(AddXenonJoy, Exit, 0x17);
+
+    HOOK_IMPL(AddXenonJoy) {
         __asm {
             mov eax, [eax + 0x04]
             mov [pPad], eax
@@ -66,66 +108,11 @@ namespace AC1EaglePatch
             call AddXenonPad
             popfd
             popad
-            jmp [AddXenonJoy_Return]
+            jmp [AddXenonJoy_Exit]
         }
     }
 
-    namespace
-    {
-        bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
-        {
-            // 1. Pad_ScaleStickValues & Pad_UpdateTimeStamps
-            // Pattern: mov ecx,[esi+500h]; lea eax,[esp+0Ch]
-            auto result1 = PatternScanner::ScanMain("8B 8E 00 05 00 00 8D");
-            if (!result1) return false;
 
-            // Offset 0x23: call Pad_ScaleStickValues (Relative Call)
-            // Offset 0x2A: call Pad_UpdateTimeStamps (Relative Call)
-            sAddresses::Pad_ScaleStickValues = result1.Offset(0x23).ResolveRelative().address;
-            sAddresses::Pad_UpdateTimeStamps = result1.Offset(0x2A).ResolveRelative().address;
-
-            // 2. _addXenonJoy_Patch
-            // Pattern: mov eax,[esi+04]; mov ecx,[eax]; mov edx,[ecx]; push 1
-            auto result2 = PatternScanner::ScanMain("8B 46 04 8B 08 8B 11 6A");
-            if (!result2) return false;
-
-            sAddresses::_addXenonJoy_Patch = result2.address;
-            // JumpOut is at +0x17 (end of the patch block in original code)
-            AddXenonJoy_Return = result2.address + 0x17;
-
-            // 3. _PadProxyPC_Patch
-            // Pattern: push esi; mov esi,ecx; mov eax,[esi+504h]; cmp eax,04
-            auto result3 = PatternScanner::ScanMain("56 8B F1 8B 86 04 05 00 00 83");
-            if (!result3) return false;
-
-            sAddresses::_PadProxyPC_Patch = result3.address;
-
-            // 4. PadXenon_ctor, Allocators, Descriptors
-            // Pattern: push ecx; push 10h; push 520h
-            auto result4 = PatternScanner::ScanMain("51 6A 10 68 20 05 00 00");
-            if (!result4) return false;
-            
-            // Offset -0x06: mov ecx, [_descriptor_var] (Opcode 8B 0D + Address)
-            sAddresses::_descriptor_var = (uint32_t*)result4.Dereference(-0x06 + 0x02).address;
-
-            // Offset 0x08: call ac_getNewDescriptor (Relative Call)
-            ac_getNewDescriptor = result4.Offset(0x08).ResolveRelative().As<t_ac_getNewDescriptor>();
-
-            // Offset 0x1A: call ac_allocate (Relative Call)
-            ac_allocate = result4.Offset(0x1A).ResolveRelative().As<t_ac_allocate>();
-
-            // Offset 0x38: call PadXenon_ctor (Relative Call)
-            sAddresses::PadXenon_ctor = result4.Offset(0x38).ResolveRelative().address;
-
-            // Offset 0x5B: call PadProxyPC_AddPad (Relative Call)
-            sAddresses::PadProxyPC_AddPad = result4.Offset(0x5B).ResolveRelative().address;
-
-            // Offset 0x69: call ac_delete (Relative Call)
-            ac_delete = result4.Offset(0x69).ResolveRelative().As<t_ac_delete>();
-
-            return true;
-        }
-    }
 
     // --- Allocators (Wrappers to match AC2/ACB/ACR structure) ---
     void* ac_allocate_wrapper(int a1, uint32_t a2, void* a3, const void* a4, const char* a5, const char* a6, uint32_t a7, const char* a8) {
@@ -309,34 +296,30 @@ namespace AC1EaglePatch
 
     // --- ASM Hooks ---
     
-    struct AddXenonJoyHook : AutoAssemblerCodeHolder_Base
+    // --- 3. Hook_PadProxyPC_Update Hook Definition ---
+    // Pattern: push esi; mov esi,ecx; mov eax,[esi+504h]; cmp eax,04
+    // "56 8B F1 8B 86 04 05 00 00 83"
+    DEFINE_AOB_HOOK(PadProxyPC, "56 8B F1 8B 86 04 05 00 00 83", 0, 5);
+
+    HOOK_IMPL(PadProxyPC)
     {
-        AddXenonJoyHook() {
-            PresetScript_InjectJump(sAddresses::_addXenonJoy_Patch, (uintptr_t)&AddXenonJoy_HookFunction);
+        __asm {
+            jmp Hook_PadProxyPC_Update
         }
-    };
-    
-    struct PadProxyUpdateHook : AutoAssemblerCodeHolder_Base
-    {
-        PadProxyUpdateHook() {
-            PresetScript_InjectJump(sAddresses::_PadProxyPC_Patch, (uintptr_t)&Hook_PadProxyPC_Update);
-        }
-    };
+    }
 
     void InitController(uintptr_t baseAddr, GameVersion version, int keyboardLayout)
     {
-        if (!ResolveAddresses(baseAddr, version))
-            return;
+        // Resolve all addresses and hooks
+        if (!HookManager::ResolveAndInstallAll())
+        {
+             LOG_ERROR("[EaglePatch] Failed to resolve Controller patches!");
+             return;
+        }
 
         // Set the global keyboard layout variable used in Hook_PadProxyPC_Update
         NEEDED_KEYBOARD_SET = keyboardLayout;
 
-        static AutoAssembleWrapper<AddXenonJoyHook> hook1;
-        hook1.Activate();
-
-        static AutoAssembleWrapper<PadProxyUpdateHook> hook2;
-        hook2.Activate();
-        
         LOG_INFO("[EaglePatch] Controller patches applied.");
     }
 

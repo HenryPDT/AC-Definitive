@@ -26,36 +26,36 @@ namespace AC2
     {
         LOG_INFO("[AC2] Initializing Game Roots via AOB Scan...");
 
-        using Utils::PatternScanner;
+        using AutoAssemblerKinda::PatternScanner;
 
         // pBhvAssChain: offset -0x06
         auto scanBhv = PatternScanner::ScanMain(Patterns::BhvAssChain);
-        if (scanBhv) Roots.BhvAssassinChain = scanBhv.ExtractAbsoluteAddress(-0x06).address;
+        if (scanBhv) Roots.BhvAssassinChain = scanBhv.ExtractAbsoluteAddress(-0x06).m_Address;
         else LOG_ERROR("Failed to find BhvAssassinChain pattern");
         
         // pWhiteRoom / TimeOfDayManager: offset -0x06
         auto scanWhite = PatternScanner::ScanMain(Patterns::WhiteRoom);
-        if (scanWhite) Roots.TimeOfDayManager = scanWhite.ExtractAbsoluteAddress(-0x06).address;
+        if (scanWhite) Roots.TimeOfDayManager = scanWhite.ExtractAbsoluteAddress(-0x06).m_Address;
         else LOG_ERROR("Failed to find TimeOfDayManager pattern");
 
         // pTimeOfDay (Current Global Time): instruction at scan + 0x0C
         auto scanTime = PatternScanner::ScanMain(Patterns::TimeOfDay);
-        if (scanTime) Roots.CurrentTimeGlobal = scanTime.ExtractAbsoluteAddress(0x0C).address;
+        if (scanTime) Roots.CurrentTimeGlobal = scanTime.ExtractAbsoluteAddress(0x0C).m_Address;
         else LOG_ERROR("Failed to find CurrentTimeGlobal pattern");
 
         // pProgressionMgr: offset -0x06 from pattern match
         auto scanProg = PatternScanner::ScanMain(Patterns::ProgressionMgr);
-        if (scanProg) Roots.ProgressionManager = scanProg.ExtractAbsoluteAddress(-0x06).address;
+        if (scanProg) Roots.ProgressionManager = scanProg.ExtractAbsoluteAddress(-0x06).m_Address;
         else LOG_ERROR("Failed to find ProgressionManager pattern");
 
         // pSwitchCharSave: offset -0x06
         auto scanChar = PatternScanner::ScanMain(Patterns::CharacterSave);
-        if (scanChar) Roots.CharacterSave = scanChar.ExtractAbsoluteAddress(-0x06).address;
+        if (scanChar) Roots.CharacterSave = scanChar.ExtractAbsoluteAddress(-0x06).m_Address;
         else LOG_ERROR("Failed to find CharacterSave pattern");
 
         // pSpeedSystem: offset -0x05
         auto scanSpeed = PatternScanner::ScanMain(Patterns::SpeedSystem);
-        if (scanSpeed) Roots.SpeedSystem = scanSpeed.ExtractAbsoluteAddress(-0x05).address;
+        if (scanSpeed) Roots.SpeedSystem = scanSpeed.ExtractAbsoluteAddress(-0x05).m_Address;
         else LOG_ERROR("Failed to find SpeedSystem pattern");
 
         // Camera: Found 8 bytes after BhvAssassinChain root

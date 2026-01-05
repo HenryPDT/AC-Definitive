@@ -32,16 +32,17 @@ namespace Trainer
         PROPERTY(FreeRoamTarget, int, Serialization::NumericAdapter_template<int>, 0)  // 0=Off, 1=Player, 2=Camera
         PROPERTY(FlySpeed, float, Serialization::NumericAdapter_template<float>, 1.0f)
         PROPERTY(CameraFOV, float, Serialization::NumericAdapter_template<float>, 0.81f)
+        PROPERTY(LockPlayerInCameraMode, bool, Serialization::BooleanAdapter, true)
 
         // Keybinds
         PROPERTY(Key_TeleportWaypoint, KeyBind, Serialization::KeyBindAdapter, KeyBind('T', false, true, false)) // Shift+T
         PROPERTY(Key_SavePosition, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_F11))
         PROPERTY(Key_RestorePosition, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_F12))
-        PROPERTY(Key_FlyForward, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD8))
-        PROPERTY(Key_FlyBackward, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD2))
-        PROPERTY(Key_FlyLeft, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD4))
-        PROPERTY(Key_FlyRight, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD6))
-        PROPERTY(Key_FlyUp, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD9))
-        PROPERTY(Key_FlyDown, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_NUMPAD7))
+        PROPERTY(Key_FlyForward, KeyBind, Serialization::KeyBindAdapter, KeyBind('W'))
+        PROPERTY(Key_FlyBackward, KeyBind, Serialization::KeyBindAdapter, KeyBind('S'))
+        PROPERTY(Key_FlyLeft, KeyBind, Serialization::KeyBindAdapter, KeyBind('A'))
+        PROPERTY(Key_FlyRight, KeyBind, Serialization::KeyBindAdapter, KeyBind('D'))
+        PROPERTY(Key_FlyUp, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_SPACE))
+        PROPERTY(Key_FlyDown, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_CONTROL))
     };
 }

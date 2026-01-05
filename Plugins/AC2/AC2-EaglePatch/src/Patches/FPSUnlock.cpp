@@ -6,59 +6,47 @@
 
 namespace AC2EaglePatch
 {
-    static uintptr_t s_ContinueRender = 0;
-    static uintptr_t s_SleepCall = 0;
+    // Define the hook and its exits
+    DEFINE_AOB_HOOK(FPSUnlock, "83 F8 10 73 10", 0, 5);
+    DEFINE_EXITS(FPSUnlock,
+        ContinueRender, 0x15,
+        SleepCall, 0x0C
+    );
 
-    DEFINE_HOOK(FPSUnlock_Hook, FPSUnlock_Return)
+    // Hook implementation
+    HOOK_IMPL(FPSUnlock)
     {
         __asm {
             cmp eax, 1
             jb Label_Sleep
-            jmp [s_ContinueRender]
+            jmp [FPSUnlock_ContinueRender]
 
         Label_Sleep:
             mov ecx, 1
-            jmp [s_SleepCall]
+            jmp [FPSUnlock_SleepCall]
         }
     }
 
-    struct FPSUnlockPatch : AutoAssemblerCodeHolder_Base
-    {
-        FPSUnlockPatch(uintptr_t addr) {
-            PresetScript_InjectJump(addr, (uintptr_t)&FPSUnlock_Hook);
-        }
-    };
-
-    using FPSUnlockWrapper = AutoAssembleWrapper<FPSUnlockPatch>;
-    static std::unique_ptr<FPSUnlockWrapper> s_FPSUnlockPatch;
-
     void InitFPSUnlock(uintptr_t baseAddr, GameVersion version, bool enable)
     {
-        auto pattern = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "83 F8 10 73 10");
-        if (!pattern) {
-             LOG_INFO("[AC2 EaglePatch] FPS Unlock pattern not found!");
-             return;
+        if (!HookManager::Resolve(&FPSUnlock_Descriptor)) {
+            LOG_INFO("[EaglePatch] FPS Unlock pattern not found!");
+            return;
         }
 
-        uintptr_t injectAddr = pattern.address;
-        
-        // continue_render: jmp INJECT+15 (0x15)
-        s_ContinueRender = injectAddr + 0x15;
-        
-        // sleep_call: jmp INJECT+C (0x0C)
-        s_SleepCall = injectAddr + 0x0C;
+        if (enable) {
+            HookManager::Install(&FPSUnlock_Descriptor);
+        }
 
-        s_FPSUnlockPatch = std::make_unique<FPSUnlockWrapper>(injectAddr);
-        
-        if (enable)
-            s_FPSUnlockPatch->Activate();
-
-        LOG_INFO("[AC2 EaglePatch] FPS Unlock initialized.");
+        LOG_INFO("[EaglePatch] FPS Unlock initialized.");
     }
 
     void SetFPSUnlock(bool enable)
     {
-        if (s_FPSUnlockPatch)
-            s_FPSUnlockPatch->Toggle(enable);
+        if (enable) {
+            HookManager::Install(&FPSUnlock_Descriptor);
+        } else {
+            HookManager::Uninstall(&FPSUnlock_Descriptor);
+        }
     }
 }

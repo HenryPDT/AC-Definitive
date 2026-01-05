@@ -6,10 +6,14 @@
 
 #include <sstream>
 #include <cstdio>
+#include <charconv>
 
 #include "AutoAssemblerKinda.h"
+#include <PatternScanner.h>
+#include <log.h>
 
 using AutoAssemblerKinda::byte;
+using AutoAssemblerKinda::PatternScanner;
 
 
 SYSTEM_INFO& GetCachedSystemInfo()
@@ -249,7 +253,7 @@ ByteVector SymbolWithAnAddress::CopyCurrentBytes(size_t numBytes)
     VirtualProtect((void*)readFrom, numBytes, PAGE_EXECUTE_READWRITE, &oldProtect);
     memcpy(&copiedBytes[0], (void*)readFrom, numBytes);
     VirtualProtect((void*)readFrom, numBytes, oldProtect, &oldProtect);
-    return std::move(result);
+    return result;
 }
 void WriteableSymbol::ProcessNewCodeElements(size_t idxToStartProcessingFrom)
 {
@@ -294,23 +298,32 @@ void WriteableSymbol::ProcessNewCodeElements(size_t idxToStartProcessingFrom)
         }
         else if (std::string_view* hexString = std::get_if<std::string_view>(&block))
         {
-            // Repeatedly:
-            // - Skip all whitespace,
-            // - Read 2 characters (at most),
-            // - Attempt to convert them to a byte.
-            std::stringstream hexss{ std::string(*hexString) };
-            hexss.setf(hexss.skipws);
-            std::string _2byteBuf;
-            byte parsedByte;
-            while (true) {
-                hexss.width(2);
-                hexss >> _2byteBuf;
-                if (hexss.eof()) {
-                    break;
+            const char* p = hexString->data();
+            const char* const end = p + hexString->size();
+
+            while (p < end) {
+                // 1. Skip whitespace
+                if (std::isspace(static_cast<unsigned char>(*p))) {
+                    ++p;
+                    continue;
                 }
-                if (sscanf_s(_2byteBuf.c_str(), "%02hhx", &parsedByte) == 1) {
-                    // Byte has been parsed.
-                    m_resultantCode.push_back(parsedByte);
+
+                // 2. Check for at least 2 remaining characters
+                if (p + 1 >= end) {
+                     // We could log a warning here for trailing single character if desired
+                     break; 
+                }
+
+                // 3. Parse exactly 2 characters
+                uint8_t val;
+                auto [ptr, ec] = std::from_chars(p, p + 2, val, 16);
+
+                if (ec == std::errc{}) {
+                    m_resultantCode.push_back(static_cast<byte>(val));
+                    p = ptr; 
+                } else {
+                    LOG_ERROR("[AutoAssemblerKinda] Invalid hex sequence at offset %td: %c%c", (p - hexString->data()), *p, *(p+1));
+                    break;
                 }
             }
         }
@@ -389,6 +402,9 @@ void AssemblerContext::ResolveSymbolAddresses()
 {
     for (auto& currentLabel : m_LabelsQuickAccess)
     {
+        if (!currentLabel->m_AssignedInWhichSymbol) {
+            throw std::runtime_error("Label not placed with PutLabel(): " + currentLabel->m_SymbolName);
+        }
         currentLabel->m_ResolvedAddr = currentLabel->m_AssignedInWhichSymbol->m_ResolvedAddr.value() + currentLabel->m_Offset;
     }
 }
@@ -589,8 +605,13 @@ void AutoAssemblerCodeHolder_Base::PresetScript_ReplaceFunctionAtItsStart(uintpt
 #endif
 }
 
-void AutoAssemblerCodeHolder_Base::PresetScript_InjectJump(uintptr_t whereToInject, uintptr_t targetAddr, size_t howManyBytesStolen)
+void AutoAssemblerCodeHolder_Base::PresetScript_InjectJump(uintptr_t whereToInject, uintptr_t targetAddr, size_t howManyBytesStolen, uintptr_t* pReturnAddr)
 {
+    // Automatically calculate return address if requested
+    if (pReturnAddr) {
+        *pReturnAddr = whereToInject + howManyBytesStolen;
+    }
+
     std::stringstream ss;
     ss << std::hex << whereToInject;
     std::string symbolsBaseName = "injectAt_" + ss.str();
@@ -601,4 +622,333 @@ void AutoAssemblerCodeHolder_Base::PresetScript_InjectJump(uintptr_t whereToInje
         db(0xE9), RIP(target),
         nop(howManyBytesStolen > 5 ? howManyBytesStolen - 5 : 0)
     };
+}
+
+// ============================================
+// Unified Hook System Implementation
+// ============================================
+
+// --- IHook ---
+
+bool IHook::RegisterSelf() {
+    HookManager::Register(this);
+    return true;
+}
+
+// --- NakedHook (x86) ---
+
+NakedHook::NakedHook(const Descriptor& desc) : m_Desc(desc) {}
+
+NakedHook::~NakedHook() {
+    Uninstall();
+}
+
+bool NakedHook::Resolve(bool requireUnique) {
+    if (m_Resolved) return true;
+    
+    auto result = PatternScanner::ScanMain(m_Desc.aobSignature, false, requireUnique);
+    if (!result) {
+        LOG_ERROR("[NakedHook] %s: Pattern not found! %s", m_Desc.name, m_Desc.aobSignature);
+        return false;
+    }
+    
+    m_ResolvedAddress = result.Offset(m_Desc.aobOffset).m_Address;
+    m_Resolved = true;
+    
+    // Resolve Exits
+    if (m_Exits && m_ExitCount > 0) {
+        for (size_t i = 0; i < m_ExitCount; i++) {
+            if (m_Exits[i].targetPtr) {
+                *m_Exits[i].targetPtr = m_ResolvedAddress + m_Exits[i].offset;
+            }
+        }
+    }
+
+
+    
+    LOG_INFO("[NakedHook] %s: Resolved at 0x%p", m_Desc.name, (void*)m_ResolvedAddress);
+    return true;
+}
+
+// Wrapper class for NakedHook installation
+struct NakedHookInjectHelper : AutoAssemblerCodeHolder_Base {
+    NakedHookInjectHelper(uintptr_t where, void* dest, size_t stolen, uintptr_t* ret) {
+        PresetScript_InjectJump(where, (uintptr_t)dest, stolen, ret);
+    }
+    void OnBeforeActivate() override {}
+};
+
+bool NakedHook::Install() {
+    if (m_Installed) return true;
+    if (!m_Resolved) return false;
+    
+    auto* wrapper = new AutoAssembleWrapper<NakedHookInjectHelper>(
+        m_ResolvedAddress, (void*)m_Desc.hookFunction, m_Desc.stolenBytes, m_Desc.returnAddress
+    );
+    wrapper->Activate();
+    
+    m_WrapperInstance = wrapper;
+    m_Installed = true;
+    return true;
+}
+
+bool NakedHook::Uninstall() {
+    if (!m_Installed) return true;
+    if (m_WrapperInstance) {
+        auto* wrapper = static_cast<AutoAssembleWrapper<NakedHookInjectHelper>*>(m_WrapperInstance);
+        delete wrapper;
+        m_WrapperInstance = nullptr;
+    }
+    m_Installed = false;
+    return true;
+}
+
+void NakedHook::SetExits(HookExit* exits, size_t count) {
+    m_Exits = exits;
+    m_ExitCount = count;
+}
+
+
+
+// --- CCodeHook (Unified) ---
+
+struct CCodeHook::HookLogic : AutoAssemblerCodeHolder_Base {
+    HookLogic(const Descriptor& desc, uintptr_t address) {
+        PresetScript_CCodeInTheMiddle(
+            address, 
+            desc.stolenBytes, 
+            desc.paramFunction, 
+            AutoAssemblerCodeHolder_Base::RETURN_TO_RIGHT_AFTER_STOLEN_BYTES, 
+            desc.executeStolenBytes
+        );
+    }
+};
+
+CCodeHook::CCodeHook(const Descriptor& desc) : m_Desc(desc) {
+    // Wrapper is created lazily in Install() to ensure m_ResolvedAddress is valid
+}
+
+CCodeHook::~CCodeHook() {
+    if (m_Wrapper) {
+        delete m_Wrapper;
+        m_Wrapper = nullptr;
+    }
+}
+
+bool CCodeHook::Resolve(bool requireUnique) {
+    if (m_Resolved) return true;
+
+    auto result = PatternScanner::ScanMain(m_Desc.aobSignature, false, requireUnique);
+    if (!result) {
+        LOG_ERROR("[CCodeHook] %s: Pattern not found!", m_Desc.name);
+        return false;
+    }
+    m_ResolvedAddress = result.Offset(m_Desc.aobOffset).m_Address;
+    m_Resolved = true;
+
+    // Resolve Dependencies
+
+     
+    // Resolve Exits
+    if (m_Exits && m_ExitCount > 0) {
+        for (size_t i = 0; i < m_ExitCount; i++) {
+            if (m_Exits[i].targetPtr) {
+                *m_Exits[i].targetPtr = m_ResolvedAddress + m_Exits[i].offset;
+            }
+        }
+    }
+
+    LOG_INFO("[CCodeHook] %s: Resolved at 0x%p", m_Desc.name, (void*)m_ResolvedAddress);
+    return true;
+}
+
+// OnBeforeActivate removed - managed by internal HookLogic
+
+bool CCodeHook::Install() {
+    if (m_Wrapper && m_Wrapper->IsActive()) return true; 
+    if (!m_Resolved) return false;
+    
+    // Lazy creation of wrapper - only create when installing and after address is resolved
+    if (!m_Wrapper) {
+        m_Wrapper = new AutoAssembleWrapper<HookLogic>(m_Desc, m_ResolvedAddress);
+    }
+    
+    m_Wrapper->Activate();
+    return true;
+}
+
+bool CCodeHook::IsInstalled() const {
+    return m_Wrapper && m_Wrapper->IsActive();
+}
+
+
+bool CCodeHook::Uninstall() {
+    if (!m_Wrapper) return true;
+    if (!m_Wrapper->IsActive()) return true;
+    m_Wrapper->Deactivate();
+    return true;
+}
+
+void CCodeHook::SetExits(HookExit* exits, size_t count) {
+    m_Exits = exits;
+    m_ExitCount = count;
+}
+
+
+
+// --- DataPatch ---
+
+DataPatch::DataPatch(const Descriptor& desc) : m_Desc(desc) {}
+
+bool DataPatch::Resolve(bool requireUnique) {
+    if (m_Resolved) return true;
+    auto result = PatternScanner::ScanMain(m_Desc.aobSignature, m_Desc.allSections, requireUnique);
+    if (!result) return false;
+    m_ResolvedAddress = result.Offset(m_Desc.aobOffset).m_Address;
+    m_Resolved = true;
+    return true;
+}
+
+bool DataPatch::Install() {
+    if (m_Installed) return true;
+    if (!m_Resolved) return false;
+    
+    m_OriginalBytes.resize(m_Desc.size);
+    memcpy(m_OriginalBytes.data(), (void*)m_ResolvedAddress, m_Desc.size);
+    
+    PatchMemory((void*)m_ResolvedAddress, m_Desc.size, m_Desc.data);
+    m_Installed = true;
+    return true;
+}
+
+bool DataPatch::Uninstall() {
+    if (!m_Installed) return true;
+    PatchMemory((void*)m_ResolvedAddress, m_OriginalBytes.size(), m_OriginalBytes.data());
+    m_Installed = false;
+    return true;
+}
+
+// --- AOBAddress ---
+AOBAddress::AOBAddress(const Descriptor& desc) : m_Desc(desc) {}
+
+bool AOBAddress::Resolve(bool requireUnique) {
+    if (m_Resolved) return true;
+
+    PatternScanner scanner;
+
+    if (m_Desc.signature) {
+        scanner = m_Desc.moduleName
+            ? PatternScanner::ScanModule(m_Desc.moduleName, m_Desc.signature, false, requireUnique)
+            : PatternScanner::ScanMain(m_Desc.signature, false, requireUnique);
+        
+        if (!scanner) {
+             LOG_ERROR("[AOBAddress] %s: Signature not found!", m_Desc.name);
+             return false;
+        }
+    } else if (m_Desc.parentHookName) {
+        IHook* parent = HookManager::Get(m_Desc.parentHookName);
+        if (!parent) {
+            LOG_ERROR("[AOBAddress] %s: Parent hook '%s' not registered!", m_Desc.name, m_Desc.parentHookName);
+            return false;
+        }
+        if (!parent->IsResolved()) {
+             if (!parent->Resolve(requireUnique)) {
+                  LOG_ERROR("[AOBAddress] %s: Failed to resolve parent hook '%s'", m_Desc.name, m_Desc.parentHookName);
+                  return false;
+             }
+        }
+        scanner = PatternScanner::FromAddress(parent->GetAddress());
+    } else {
+        LOG_ERROR("[AOBAddress] %s: No signature or parent hook specified!", m_Desc.name);
+        return false;
+    }
+
+    scanner = scanner.Offset(m_Desc.offset);
+
+    if (m_Desc.resolveRelative) {
+        scanner = scanner.ResolveRelative(m_Desc.instructionSize, m_Desc.relativeOffset);
+    }
+
+    for(int i=0; i<m_Desc.dereferenceCount; ++i) {
+        scanner = scanner.Dereference(0);
+    }
+
+    if (!scanner.m_Found) {
+         LOG_ERROR("[AOBAddress] %s: Resolution failed", m_Desc.name);
+         return false;
+    }
+
+    m_ResolvedAddress = scanner.m_Address;
+    m_Resolved = true;
+    
+    if (m_Desc.targetPtr) {
+        *m_Desc.targetPtr = m_ResolvedAddress;
+    }
+    
+    LOG_INFO("[AOBAddress] %s: Resolved to %p", m_Desc.name, (void*)m_ResolvedAddress);
+    return true;
+}
+
+std::vector<IHook*>& HookManager::GetHooks() {
+    static std::vector<IHook*> hooks;
+    return hooks;
+}
+
+void HookManager::Register(IHook* hook) {
+    GetHooks().push_back(hook);
+}
+
+bool HookManager::Resolve(IHook* hook, bool requireUnique) {
+    if (!hook) return false;
+    return hook->Resolve(requireUnique);
+}
+
+size_t HookManager::ResolveAll(bool requireUnique) {
+    size_t count = 0;
+    for (auto* hook : GetHooks()) {
+        if (Resolve(hook, requireUnique)) count++;
+    }
+    return count;
+}
+
+size_t HookManager::InstallAll() {
+    size_t count = 0;
+    for (auto* hook : GetHooks()) {
+        if (hook->Resolve(false) && hook->Install()) count++; 
+    }
+    return count;
+}
+
+void HookManager::UninstallAll() {
+    for (auto* hook : GetHooks()) {
+        hook->Uninstall();
+    }
+}
+
+size_t HookManager::ResolveAndInstallAll(bool requireUnique) {
+    ResolveAll(requireUnique);
+    return InstallAll();
+}
+
+void HookManager::Toggle(IHook* hook, bool enable) {
+    if (!hook) return;
+    if (enable) {
+        if (!hook->IsResolved()) hook->Resolve();
+        hook->Install();
+    } else {
+        hook->Uninstall();
+    }
+}
+
+IHook* HookManager::Get(const char* name) {
+    if (!name) return nullptr;
+    for (auto* hook : GetHooks()) {
+        const char* hookName = hook->GetName();
+        if (hookName && strcmp(hookName, name) == 0) return hook;
+    }
+    return nullptr;
+}
+
+const std::vector<IHook*>& HookManager::GetAll() {
+    return GetHooks();
 }

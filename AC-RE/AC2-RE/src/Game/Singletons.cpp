@@ -14,8 +14,7 @@
 
 namespace AC2
 {
-    using Utils::ScanResult;
-    using Utils::PatternScanner;
+    using AutoAssemblerKinda::PatternScanner;
 
     // Stored from hook
     MissionTimer* g_pMissionTimer = nullptr;

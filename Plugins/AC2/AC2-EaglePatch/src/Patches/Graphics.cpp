@@ -1,73 +1,99 @@
 #include "EaglePatch.h"
 #include "Graphics.h"
 #include <AutoAssemblerKinda.h>
-#include <PatternScanner.h>
-#include <memory>
 #include "log.h"
 
 namespace AC2EaglePatch
 {
-    struct sAddresses {
-        static uintptr_t ShadowMap;
-        static uintptr_t Cloth;
-        static uintptr_t LodLevel;
-        static uintptr_t ForceLod0;
-        static uintptr_t CheckChar;
-        static uintptr_t CheckCharOut;
-    };
+    // ==========================================================================
+    // Graphics Improvements
+    // ==========================================================================
+    // This file contains patches for:
+    // 1. Shadow Map Resolution - Increases shadow quality from 1024 to 4096
+    // 2. Draw Distance - Multiple hooks to improve LOD and cloth rendering
+    //
+    // The draw distance system has interdependent hooks:
+    // - Cloth_Hook: Disables cloth fade-out at distance
+    // - ForceLod0_Hook: Forces highest LOD, chains to CheckIsCharacter
+    // - CheckIsCharacter_Hook: Preserves LOD0 for characters specifically
+    // - LodLevel: Skips distance-based LOD calculation entirely
+    // ==========================================================================
 
-    uintptr_t sAddresses::ShadowMap = 0;
-    uintptr_t sAddresses::Cloth = 0;
-    uintptr_t sAddresses::LodLevel = 0;
-    uintptr_t sAddresses::ForceLod0 = 0;
-    uintptr_t sAddresses::CheckChar = 0;
-    uintptr_t sAddresses::CheckCharOut = 0;
+    // ==========================================================================
+    // 1. SHADOW MAP RESOLUTION PATCH
+    // ==========================================================================
+    // Pattern finds: mov dword ptr [ecx+20h], 400h (sets shadow map size to 1024)
+    // We patch the immediate value 0x400 (1024) to 0x1000 (4096)
+    // Offset +3 skips the opcode (C7 41 20) to reach the immediate value
 
-    // --- Hook Wrappers ---
+    DEFINE_DATA_PATCH(ShadowMap, "C7 41 20 00 04 00 00 5D", 3, (int32_t)4096);
 
-    DEFINE_HOOK(Cloth_Hook, Cloth_Return)
+    // ==========================================================================
+    // 2. DRAW DISTANCE HOOKS
+    // ==========================================================================
+
+    // --- 2a. Cloth Rendering Hook ---
+    // Disables cloth fade-out at distance by returning 0 from the check
+    DEFINE_AOB_HOOK(ClothHook, "E8 28 F4 FF FF 85", 0, 5);
+
+    HOOK_IMPL(ClothHook)
     {
         __asm {
-            pop eax
-            xor eax, eax
-            jmp [Cloth_Return]
+            pop eax          // Clean up stack from the CALL we're replacing
+            xor eax, eax     // Return 0 (disable cloth fade)
+            jmp [ClothHook_Return]
         }
     }
 
-    DEFINE_HOOK(ForceLod0_Hook, ForceLod0_Return)
+    // --- 2b. Force LOD0 Hook ---
+    // Chains to CheckIsCharacter hook (the return address IS CheckIsCharacter's address)
+    // This ensures we force LOD0 for most entities
+    DEFINE_AOB_HOOK(ForceLod0, "D9 44 C7 4C 8B 77 48", 0, 7);
+
+    // Derive from CheckIsCharacter hook (same pattern) to avoid redundant scan
+    DEFINE_ADDRESS(CheckCharAddr, "@CheckIsCharacter", 0, RAW, nullptr);
+
+    HOOK_IMPL(ForceLod0)
     {
         __asm {
-            mov dword ptr [ebp-0x10], 0
-            xor eax, eax
-            jmp [ForceLod0_Return]
+            mov dword ptr [ebp-0x10], 0  // Force LOD index to 0
+            xor eax, eax                  // Clear EAX
+            jmp [ForceLod0_Return]        // Jump to CheckIsCharacter hook
         }
     }
 
-    DEFINE_HOOK(CheckIsCharacter_Hook, CheckIsCharacter_Return)
+
+    // --- 2c. Check Is Character Hook ---
+    // Preserves LOD0 specifically for character entities (prevents pop-in)
+    DEFINE_AOB_HOOK(CheckIsCharacter, "8A 4B 28 8B 7C 83 14", 0, 7);
+
+    HOOK_IMPL(CheckIsCharacter)
     {
         __asm {
             pushad
             pushfd
             
+            // Check if entity has valid component data
             mov edx, [ebp + 0x08]
             mov edx, [edx + 0x84]
             test edx, edx
-            jz exit_hook
+            jz exit_check
 
+            // Check if entity is flagged as character (bit 18 of flags)
             mov ecx, [edx + 0x60]
             shr ecx, 0x12
             test cl, 1
-            jz exit_hook
+            jz exit_check
 
-            // Entity is character, force LOD0
-            mov dword ptr [esp + 0x20], 0 // eax in pushad (at esp+4+1C)
-            mov dword ptr [ebp - 0x10], 0
+            // Entity is character - force LOD0
+            mov dword ptr [esp + 0x20], 0   // eax in pushad
+            mov dword ptr [ebp - 0x10], 0   // LOD index
 
-        exit_hook:
+        exit_check:
             popfd
             popad
 
-            // Stolen bytes
+            // Execute stolen bytes (original code we overwrote)
             mov cl, [ebx + 0x28]
             mov edi, [ebx + eax * 4 + 0x14]
 
@@ -75,100 +101,69 @@ namespace AC2EaglePatch
         }
     }
 
-    namespace
+    // --- 2d. LOD Level Distance Calculation Skip ---
+    // This patches the LOD distance calculation to always skip to the end
+    // We use a simple NOP approach - skip the calculation entirely
+    // Pattern: 90 0F BE D1 ...  (NOP followed by MOVSX)
+    // We inject a jump that skips +0x44 bytes (the entire calculation)
+    DEFINE_ADDRESS(LodLevelSkipLoc, "90 0F BE D1 F3 0F 10 04 95 ?? ?? 07 02", 0, RAW, nullptr);
+
+    // For this complex case, we keep a small manual wrapper
+    struct LodLevelSkipPatch : AutoAssemblerCodeHolder_Base
     {
-        bool ResolveAddresses(uintptr_t baseAddr, GameVersion version)
-        {
-            // ShadowMap: C7 41 20 00 04 00 00 5D
-            auto shadowMap = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "C7 41 20 00 04 00 00 5D");
-            if (!shadowMap) return false;
-            sAddresses::ShadowMap = shadowMap.address + 0x03;
-
-            // Cloth: E8 28 F4 FF FF 85
-            auto cloth = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "E8 28 F4 FF FF 85");
-            if (!cloth) return false;
-            sAddresses::Cloth = cloth.address;
-            Cloth_Return = cloth.address + 0x05;
-
-            // LodLevel: 90 0F BE D1 F3 0F 10 04 95 ?? ?? 07 02
-            auto lodLevel = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "90 0F BE D1 F3 0F 10 04 95 ?? ?? 07 02");
-            if (!lodLevel) return false;
-            sAddresses::LodLevel = lodLevel.address;
-
-            // ForceLod0: D9 44 C7 4C 8B 77 48
-            auto forceLod0 = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "D9 44 C7 4C 8B 77 48");
-            if (!forceLod0) return false;
-            sAddresses::ForceLod0 = forceLod0.address;
-            ForceLod0_Return = 0; // Set in struct because it jumps to another hook
-
-            // CheckChar: 8A 4B 28 8B 7C 83 14
-            auto checkChar = Utils::PatternScanner::ScanModule("AssassinsCreedIIGame.exe", "8A 4B 28 8B 7C 83 14");
-            if (!checkChar) return false;
-            sAddresses::CheckChar = checkChar.address;
-            sAddresses::CheckCharOut = checkChar.address + 0x07;
-            CheckIsCharacter_Return = sAddresses::CheckCharOut;
-
-            return true;
-        }
-    }
-
-    // --- Shadow Map Patch ---
-    struct ShadowMapPatch : AutoAssemblerCodeHolder_Base
-    {
-        ShadowMapPatch(uintptr_t addr) {
-            DEFINE_ADDR(target, addr);
-            // Overwrite 1024 (0x400) with 4096 (0x1000)
-            target = { dd(4096) };
+        LodLevelSkipPatch(uintptr_t addr) {
+            // Jump from addr to addr+0x44 (skip the distance calc)
+            PresetScript_InjectJump(addr, addr + 0x44);
         }
     };
 
-    // --- Draw Distance Patches ---
-    struct DrawDistancePatches : AutoAssemblerCodeHolder_Base
-    {
-        DrawDistancePatches(uintptr_t clothAddr) {
-            PresetScript_InjectJump(clothAddr, (uintptr_t)&Cloth_Hook);
-        }
-    };
+    // ==========================================================================
+    // STATE MANAGEMENT
+    // ==========================================================================
 
-    struct DrawDistanceHooks : AutoAssemblerCodeHolder_Base
-    {
-        DrawDistanceHooks(uintptr_t forceLod0, uintptr_t checkChar, uintptr_t checkCharJumpOut, uintptr_t lodLevelCalc)
-        {
-            ForceLod0_Return = checkChar;
-            PresetScript_InjectJump(forceLod0, (uintptr_t)&ForceLod0_Hook);
-
-            CheckIsCharacter_Return = checkCharJumpOut;
-            PresetScript_InjectJump(checkChar, (uintptr_t)&CheckIsCharacter_Hook, 0x07);
-
-            // 3. Force Maximum LOD Level from Distance calculation
-            PresetScript_InjectJump(lodLevelCalc, lodLevelCalc + 0x44);
-        }
-    };
-
-    using ShadowMapWrapper = AutoAssembleWrapper<ShadowMapPatch>;
-    using DrawDistancePatchesWrapper = AutoAssembleWrapper<DrawDistancePatches>;
-    using DrawDistanceHooksWrapper = AutoAssembleWrapper<DrawDistanceHooks>;
-
-    static std::unique_ptr<ShadowMapWrapper> s_ShadowPatch;
-    static std::unique_ptr<DrawDistancePatchesWrapper> s_DDPatch;
-    static std::unique_ptr<DrawDistanceHooksWrapper> s_DDHooks;
+    static AutoAssembleWrapper<LodLevelSkipPatch>* s_LodSkipPatch = nullptr;
+    static bool s_ShadowsEnabled = false;
+    static bool s_DrawDistanceEnabled = false;
 
     void InitGraphics(uintptr_t baseAddr, GameVersion version, bool shadows, bool drawDistance)
     {
-        if (!ResolveAddresses(baseAddr, version))
+        // --- Resolve Shadow Map ---
+        if (!HookManager::Resolve(&ShadowMap_Descriptor)) {
+            LOG_INFO("[EaglePatch] Graphics: ShadowMap pattern not found!");
             return;
+        }
 
-        // Shadow Map
-        s_ShadowPatch = std::make_unique<ShadowMapWrapper>(sAddresses::ShadowMap);
-        if (shadows) s_ShadowPatch->Activate();
+        // --- Resolve Draw Distance Hooks ---
+        if (!HookManager::Resolve(&ClothHook_Descriptor) ||
+            !HookManager::Resolve(&ForceLod0_Descriptor) ||
+            !HookManager::Resolve(&CheckCharAddr_Desc) ||
+            !HookManager::Resolve(&CheckIsCharacter_Descriptor))
+        {
+            LOG_INFO("[EaglePatch] Graphics: Draw distance patterns not found!");
+            return;
+        }
 
-        // Draw Distance
-        s_DDPatch = std::make_unique<DrawDistancePatchesWrapper>(sAddresses::Cloth);
-        s_DDHooks = std::make_unique<DrawDistanceHooksWrapper>(sAddresses::ForceLod0, sAddresses::CheckChar, sAddresses::CheckCharOut, sAddresses::LodLevel);
-        
+        // Chain ForceLod0 to CheckIsCharacter (ForceLod0 returns via CheckIsCharacter)
+        ForceLod0_Return = CheckCharAddr_Desc.GetAddress();
+
+        // Create LodLevel skip patch
+        if (HookManager::Resolve(&LodLevelSkipLoc_Desc)) {
+            s_LodSkipPatch = new AutoAssembleWrapper<LodLevelSkipPatch>(LodLevelSkipLoc_Desc.GetAddress());
+        }
+
+        // --- Apply Initial State ---
+        s_ShadowsEnabled = shadows;
+        s_DrawDistanceEnabled = drawDistance;
+
+        if (shadows) {
+            HookManager::Install(&ShadowMap_Descriptor);
+        }
+
         if (drawDistance) {
-            s_DDPatch->Activate();
-            s_DDHooks->Activate();
+            HookManager::Install(&ClothHook_Descriptor);
+            HookManager::Install(&ForceLod0_Descriptor);
+            HookManager::Install(&CheckIsCharacter_Descriptor);
+            if (s_LodSkipPatch) s_LodSkipPatch->Activate();
         }
 
         LOG_INFO("[EaglePatch] Graphics fixes initialized.");
@@ -176,12 +171,27 @@ namespace AC2EaglePatch
 
     void SetShadowMapResolution(bool enable)
     {
-        if (s_ShadowPatch) s_ShadowPatch->Toggle(enable);
+        if (enable) {
+            HookManager::Install(&ShadowMap_Descriptor);
+        } else {
+            HookManager::Uninstall(&ShadowMap_Descriptor);
+        }
+        s_ShadowsEnabled = enable;
     }
 
     void SetDrawDistance(bool enable)
     {
-        if (s_DDPatch) s_DDPatch->Toggle(enable);
-        if (s_DDHooks) s_DDHooks->Toggle(enable);
+        if (enable) {
+            HookManager::Install(&ClothHook_Descriptor);
+            HookManager::Install(&ForceLod0_Descriptor);
+            HookManager::Install(&CheckIsCharacter_Descriptor);
+            if (s_LodSkipPatch) s_LodSkipPatch->Activate();
+        } else {
+            HookManager::Uninstall(&ClothHook_Descriptor);
+            HookManager::Uninstall(&ForceLod0_Descriptor);
+            HookManager::Uninstall(&CheckIsCharacter_Descriptor);
+            if (s_LodSkipPatch) s_LodSkipPatch->Deactivate();
+        }
+        s_DrawDistanceEnabled = enable;
     }
 }
