@@ -97,11 +97,21 @@ struct AxisRange {
     }
 };
 
+// Named constants for axis indices in DeviceInfo::axes array
+enum AxisIndex {
+    AXIS_X = 0,    // Left stick X
+    AXIS_Y = 1,    // Left stick Y  
+    AXIS_Z = 2,    // Right stick X (or Z-axis)
+    AXIS_RX = 3,   // Right stick X rotation
+    AXIS_RY = 4,   // Right stick Y rotation
+    AXIS_RZ = 5    // Right stick Y (or Z-rotation)
+};
+
 struct DeviceInfo {
     BYTE type = 0;
     DWORD vid = 0;
     DWORD pid = 0;
-    AxisRange axes[6]; // X, Y, Z, Rx, Ry, Rz
+    AxisRange axes[6]; // Indexed by AxisIndex enum
 };
 
 static std::unordered_map<IDirectInputDevice8*, DeviceInfo> g_Devices;
@@ -136,13 +146,13 @@ static void ApplyHIDStateToDI(const XINPUT_STATE& xState, const DeviceInfo& info
         return static_cast<LONG>(center + (norm * halfRange));
     };
 
-    js->lX = mapAxis(pad.sThumbLX, info.axes[0], false);
-    js->lY = mapAxis(pad.sThumbLY, info.axes[1], true); // Invert Y for DInput
-    js->lZ = mapAxis(pad.sThumbRX, info.axes[2], false);
+    js->lX = mapAxis(pad.sThumbLX, info.axes[AXIS_X], false);
+    js->lY = mapAxis(pad.sThumbLY, info.axes[AXIS_Y], true); // Invert Y for DInput
+    js->lZ = mapAxis(pad.sThumbRX, info.axes[AXIS_Z], false);
 
     // Map Right Stick Y to Rz (Axis 5)
     if (cbData >= sizeof(DIJOYSTATE))
-        js->lRz = mapAxis(pad.sThumbRY, info.axes[5], true);
+        js->lRz = mapAxis(pad.sThumbRY, info.axes[AXIS_RZ], true);
 
     // --- POV ---
     DWORD pov = (DWORD)-1;
@@ -329,10 +339,10 @@ static XINPUT_STATE BuildVirtualXInputState(const DIJOYSTATE2& state, const Devi
     pad.bRightTrigger = DigitalTriggerValue(buttonPressed(7));
 
     // Sticks
-    pad.sThumbLX = AxisToThumbValue(info.axes[0], state.lX);
-    pad.sThumbLY = AxisToThumbValue(info.axes[1], state.lY, true);
-    pad.sThumbRX = AxisToThumbValue(info.axes[2], state.lZ);
-    pad.sThumbRY = AxisToThumbValue(info.axes[5], state.lRz, true);
+    pad.sThumbLX = AxisToThumbValue(info.axes[AXIS_X], state.lX);
+    pad.sThumbLY = AxisToThumbValue(info.axes[AXIS_Y], state.lY, true);
+    pad.sThumbRX = AxisToThumbValue(info.axes[AXIS_Z], state.lZ);
+    pad.sThumbRY = AxisToThumbValue(info.axes[AXIS_RZ], state.lRz, true);
 
     return xState;
 }

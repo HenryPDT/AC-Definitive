@@ -45,7 +45,7 @@ public:
     void RenderPluginMenus();
     void DrawPluginMenu();
     Game GetCurrentGame() const { return m_currentGame; }
-    void* GetPluginInterface(const std::string& name);
+    void* GetPluginInterface(const std::string& name) const;
 
 private:
     void LoadPlugins(PluginLoaderInterface& loaderInterface);
@@ -53,4 +53,4 @@ private:
     std::vector<LoadedPlugin> m_plugins;
     Game m_currentGame = Game::Unknown;
     HMODULE m_loaderModule = NULL;
-};
+};

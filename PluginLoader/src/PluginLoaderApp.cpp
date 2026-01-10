@@ -82,7 +82,7 @@ namespace
 
     void PluginLoaderInterface_RequestUnload(HMODULE /*pluginHandle*/)
     {
-        // Not implemented for now
+        LOG_WARN("RequestUnload is not implemented. Plugins cannot be unloaded at runtime.");
     }
 
     // Helper for polling hotkeys with "rising edge" detection
@@ -111,151 +111,51 @@ namespace
     LRESULT __stdcall LoaderWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
         bool renderInBackground = PluginLoaderConfig::g_Config.RenderInBackground.get();
-
         const bool configuredExclusiveFullscreen =
             (PluginLoaderConfig::g_Config.WindowedMode.get() == PluginLoaderConfig::WindowedMode::ExclusiveFullscreen);
 
-        // Force RenderInBackground off if in Exclusive Fullscreen to ensure standard minimizing behavior
         if (configuredExclusiveFullscreen)
             renderInBackground = false;
 
-        // When running Exclusive Fullscreen, Alt+Tab will force DXGI out of exclusive mode.
-        // We can't prevent that, but we can behave like a "traditional" fullscreen game:
-        // minimize on focus loss so the window doesn't sit on the desktop rendering in the background,
-        // and restore/re-enter exclusive on focus regain.
-        if (configuredExclusiveFullscreen && !renderInBackground)
+        HWND hWndOther = (uMsg == WM_ACTIVATE) ? (HWND)lParam : NULL;
+        bool toImGui = (uMsg == WM_ACTIVATE && BaseHook::WindowedMode::IsImGuiPlatformWindow(hWndOther));
+
+        // 1. Exclusive Fullscreen Handling: minimize on focus loss (unless focusing an ImGui window), restore on focus regain.
+        if (configuredExclusiveFullscreen && !renderInBackground && !toImGui)
         {
             if (uMsg == WM_ACTIVATE)
             {
-                if (LOWORD(wParam) == WA_INACTIVE)
-                {
-                    if (IsWindow(hWnd) && !IsIconic(hWnd))
-                        ShowWindow(hWnd, SW_MINIMIZE);
-                }
-                else
-                {
-                    if (IsWindow(hWnd) && IsIconic(hWnd))
-                        ShowWindow(hWnd, SW_RESTORE);
-                }
+                if (LOWORD(wParam) == WA_INACTIVE) { if (IsWindow(hWnd) && !IsIconic(hWnd)) ShowWindow(hWnd, SW_MINIMIZE); }
+                else { if (IsWindow(hWnd) && IsIconic(hWnd)) ShowWindow(hWnd, SW_RESTORE); }
             }
             else if (uMsg == WM_ACTIVATEAPP)
             {
-                // Some titles primarily use WM_ACTIVATEAPP.
-                if (wParam == FALSE)
-                {
-                    if (IsWindow(hWnd) && !IsIconic(hWnd))
-                        ShowWindow(hWnd, SW_MINIMIZE);
-                }
-                else
-                {
-                    if (IsWindow(hWnd) && IsIconic(hWnd))
-                        ShowWindow(hWnd, SW_RESTORE);
-                }
+                if (wParam == FALSE) { if (IsWindow(hWnd) && !IsIconic(hWnd)) ShowWindow(hWnd, SW_MINIMIZE); }
+                else { if (IsWindow(hWnd) && IsIconic(hWnd)) ShowWindow(hWnd, SW_RESTORE); }
             }
         }
 
-        // Block Alt+Enter toggling when Exclusive Fullscreen is configured. This keeps settings authoritative
-        // and prevents silent drift into windowed mode.
+        // 2. Authoritative Settings Enforcement
         if ((uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_SYSCHAR) &&
-            wParam == VK_RETURN &&
-            (lParam & (1 << 29)) && // ALT is down
-            configuredExclusiveFullscreen)
-        {
+            wParam == VK_RETURN && (lParam & (1 << 29)) && configuredExclusiveFullscreen)
             return 1;
-        }
 
-        // Background Rendering: Spoof focus messages to keep game loop running
-        if (renderInBackground)
-        {
-            if (uMsg == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE)
-                wParam = WA_ACTIVE; // Pretend we are active
-            if (uMsg == WM_ACTIVATEAPP && wParam == FALSE)
-                wParam = TRUE; // Pretend app is active
-        }
-
-        // On focus regain, request exclusive fullscreen restore if configured.
-        if (uMsg == WM_ACTIVATE &&
-            LOWORD(wParam) != WA_INACTIVE &&
-            configuredExclusiveFullscreen)
-        {
-            BaseHook::WindowedMode::RequestRestoreExclusiveFullscreen();
-        }
-
-        // Scale mouse coordinates from Physical Window to Virtual Resolution (if applicable)
-        // Fixes cursor restriction when window size != game resolution (Scale Content mode).
-        lParam = BaseHook::WindowedMode::ScaleMouseMessage(hWnd, uMsg, lParam);
-
-        // Feed ImGui. To avoid double mouse input, optionally filter mouse messages when DirectInput drives ImGui mouse.
-        if (BaseHook::Data::bIsInitialized)
-        {
-            // Always allow Win32 mouse movement into ImGui; only filter buttons/wheel when DirectInput injects them.
-            if (!ShouldImGuiMouseButtonsUseDirectInput() || !IsMouseButtonsOrWheelMessage(uMsg))
-                ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
-        }
-
-        // Handle our own hotkeys, but only if an ImGui window doesn't want keyboard input.
-        if (BaseHook::Data::bIsInitialized && !ImGui::GetIO().WantCaptureKeyboard)
-        {
-            if (uMsg == WM_KEYDOWN && wParam == BaseHook::Keys::DetachDll)
-            {
-                BaseHook::Detach();
-                if (auto* app = PluginLoaderApp::Get())
-                    app->RequestShutdown();
-            }
-        }
-
-        // Keep blocking state responsive: update it from the same central policy used in DrawOverlay.
+        // 3. Update Global Input Blocking State
         {
             const HWND foreground = GetForegroundWindow();
             const bool is_focused = (foreground == BaseHook::Data::hWindow);
-            const bool menuOpen = BaseHook::Data::bShowMenu;
             const ConsoleMode cm = (PluginLoaderApp::Get() ? PluginLoaderApp::Get()->GetConsole().mode : ConsoleMode::Hidden);
+            const bool consoleWantsFocus = (cm == ConsoleMode::ForegroundAndFocusable);
+            
+            BaseHook::Data::bShowConsole = consoleWantsFocus;
 
-            const auto cap = InputCapture::Compute(is_focused, menuOpen, cm);
-            const bool shouldBlock = cap.blockKeyboardWndProc || cap.blockMouseMoveWndProc || cap.blockDirectInputMouseButtons;
-            if (BaseHook::Data::bBlockInput != shouldBlock)
-                BaseHook::Data::bBlockInput = shouldBlock;
+            const auto cap = InputCapture::Compute(is_focused, BaseHook::Data::bShowMenu, cm);
+            if (BaseHook::Data::bBlockInput != (cap.blockKeyboardWndProc || cap.blockMouseMoveWndProc || cap.blockDirectInputMouseButtons))
+                BaseHook::Data::bBlockInput = (cap.blockKeyboardWndProc || cap.blockMouseMoveWndProc || cap.blockDirectInputMouseButtons);
         }
 
-        // If input should be blocked (menu/console open), prevent pure input messages
-        // from reaching the game, but ALWAYS forward window-management/system messages
-        // so fullscreen exclusive / Alt+Tab / device reset logic can run normally.
-        if (BaseHook::Data::bBlockInput)
-        {
-            switch (uMsg)
-            {
-            // Keyboard input
-            case WM_SYSKEYDOWN:
-            case WM_SYSKEYUP:
-                if (wParam == VK_F4)
-                    break;
-                return 1;
-
-            case WM_KEYDOWN:
-            case WM_KEYUP:
-            case WM_CHAR:
-
-            // Mouse input (mouse buttons/wheel still come from DirectInput for the game)
-            case WM_MOUSEMOVE:
-            case WM_LBUTTONDOWN:
-            case WM_LBUTTONUP:
-            case WM_RBUTTONDOWN:
-            case WM_RBUTTONUP:
-            case WM_MBUTTONDOWN:
-            case WM_MBUTTONUP:
-            case WM_XBUTTONDOWN:
-            case WM_XBUTTONUP:
-            case WM_MOUSEWHEEL:
-            case WM_MOUSEHWHEEL:
-                return 1;
-            default:
-                break;
-            }
-        }
-
-        return BaseHook::Data::oWndProc
-            ? CallWindowProc(BaseHook::Data::oWndProc, hWnd, uMsg, wParam, lParam)
-            : DefWindowProc(hWnd, uMsg, wParam, lParam);
+        // 4. Delegate everything else to the library (ImGui, Scaling, Spoofing, Input Blocking, etc)
+        return BaseHook::Hooks::WndProc_Base(hWnd, uMsg, wParam, lParam);
     }
 }
 
@@ -272,6 +172,11 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
         m_WindowHeight = PluginLoaderConfig::g_Config.WindowHeight.get();
         m_DirectXVersion = (int)PluginLoaderConfig::g_Config.DirectXVersion.get();
         m_CursorClipMode = (int)PluginLoaderConfig::g_Config.CursorClipMode.get();
+        m_RenderInBackground = PluginLoaderConfig::g_Config.RenderInBackground.get();
+        
+        // Sync multi-viewport setting
+        BaseHook::WindowedMode::SetMultiViewportEnabled(PluginLoaderConfig::g_Config.EnableMultiViewport.get());
+        BaseHook::WindowedMode::SetMultiViewportScalingMode(PluginLoaderConfig::g_Config.MultiViewportScaling.get());
     }
 
     void OnActivate() override {}
@@ -317,12 +222,14 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
             app->GetConsole().Draw("Console");
 
         const ConsoleMode cm = (PluginLoaderApp::Get() ? PluginLoaderApp::Get()->GetConsole().mode : ConsoleMode::Hidden);
+        BaseHook::Data::bShowConsole = (cm == ConsoleMode::ForegroundAndFocusable);
 
         BaseHook::Data::bImGuiMouseButtonsFromDirectInput = ShouldImGuiMouseButtonsUseDirectInput();
 
         const auto cap = InputCapture::Compute(is_focused, BaseHook::Data::bShowMenu, cm);
 
-        io.MouseDrawCursor = cap.showMouseCursor;
+        // Cursor clip mode: 0=Default, 1=Confine, 2=Unlock, 3=UnlockWhenMenuOpen
+        const int cursorClipMode = BaseHook::WindowedMode::g_State.cursorClipMode;
 
         const bool shouldBlock = cap.blockKeyboardWndProc || cap.blockMouseMoveWndProc || cap.blockDirectInputMouseButtons;
         if (BaseHook::Data::bBlockInput != shouldBlock)
@@ -331,8 +238,20 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
             LOG_INFO("Input blocking state changed to: %s", BaseHook::Data::bBlockInput ? "ON" : "OFF");
         }
 
-        // Confine cursor logic: Trap cursor when focused, regardless of menu state or window mode.
-        if (is_focused && BaseHook::Data::hWindow)
+        // Confine cursor logic: Only clip when cursorClipMode requires it
+        bool shouldClipCursor = false;
+        
+        if (cursorClipMode == 1) // Confine - always clip when focused
+        {
+            shouldClipCursor = true;
+        }
+        else if (cursorClipMode == 3) // UnlockWhenMenuOpen - clip only if menu/console not open
+        {
+            shouldClipCursor = !(BaseHook::Data::bShowMenu || BaseHook::Data::bShowConsole);
+        }
+        // cursorClipMode 0 (Default) and 2 (Unlock): don't proactively clip from DrawOverlay
+
+        if (shouldClipCursor && is_focused && BaseHook::Data::hWindow)
         {
             RECT rect;
             if (GetClientRect(BaseHook::Data::hWindow, &rect))
@@ -344,6 +263,11 @@ struct PluginLoaderApp::LoaderSettings : public BaseHook::Settings
                 rect = { ul.x, ul.y, lr.x, lr.y };
                 ClipCursor(&rect);
             }
+        }
+        else if (!shouldClipCursor)
+        {
+            // Explicitly unclip when unclip mode is active
+            ClipCursor(NULL);
         }
 
         if (auto* app = PluginLoaderApp::Get())

@@ -60,25 +60,13 @@ namespace BaseHook::Hooks
 
         if (WindowedMode::ShouldHandle() && Fullscreen)
         {
-            static ULONGLONG s_lastLog = 0;
-            const ULONGLONG now = GetTickCount64();
-            if (now - s_lastLog > 5000)
-            {
-                s_lastLog = now;
-                LOG_INFO("DXGI(SetFullscreenState): Blocked TRUE -> forcing FALSE (windowed mode configured).");
-            }
+            LOG_THROTTLED(5000, "DXGI(SetFullscreenState): Blocked TRUE -> forcing FALSE (windowed mode configured).");
             return s_oSetFullscreenState ? s_oSetFullscreenState(pSwapChain, FALSE, nullptr) : S_OK;
         }
 
         if (!WindowedMode::ShouldHandle() && !Fullscreen && (altDown && enterDown))
         {
-            static ULONGLONG s_lastLog = 0;
-            const ULONGLONG now = GetTickCount64();
-            if (now - s_lastLog > 1000)
-            {
-                s_lastLog = now;
-                LOG_INFO("DXGI(SetFullscreenState): Blocked FALSE due to Alt+Enter (exclusive fullscreen configured).");
-            }
+            LOG_THROTTLED(1000, "DXGI(SetFullscreenState): Blocked FALSE due to Alt+Enter (exclusive fullscreen configured).");
             return S_OK;
         }
 
@@ -222,6 +210,17 @@ namespace BaseHook::Hooks
             DisableDXGIAltEnter(pSwapChain);
 
             InitImGuiStyle();
+
+            // Configure multi-viewport if enabled
+            ImGuiIO& io = ImGui::GetIO();
+            if (WindowedMode::IsMultiViewportEnabled())
+            {
+                io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+                // Borderless, always-on-top viewport windows (like native ImGui windows)
+                io.ConfigViewportsNoDecoration = true;
+                io.ConfigViewportsNoTaskBarIcon = true;
+            }
+
             ImGui_ImplWin32_Init(Data::hWindow);
             ImGui_ImplDX10_Init(Data::pDevice10);
             CreateRenderTarget10(pSwapChain);
@@ -241,6 +240,17 @@ namespace BaseHook::Hooks
         DisableDXGIAltEnter(pSwapChain);
 
         InitImGuiStyle();
+
+        // Configure multi-viewport if enabled
+        ImGuiIO& io = ImGui::GetIO();
+        if (WindowedMode::IsMultiViewportEnabled())
+        {
+            io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+            // Borderless, always-on-top viewport windows (like native ImGui windows)
+            io.ConfigViewportsNoDecoration = true;
+            io.ConfigViewportsNoTaskBarIcon = true;
+        }
+
         ImGui_ImplWin32_Init(Data::hWindow);
         ImGui_ImplDX11_Init(Data::pDevice11, Data::pContext11);
         CreateRenderTarget11(pSwapChain);
@@ -254,6 +264,14 @@ namespace BaseHook::Hooks
 
         if (WindowedMode::ShouldHandle())
             WindowedMode::Apply(Data::hWindow);
+
+        // Sync multi-viewport runtime flag
+        ImGuiIO& io = ImGui::GetIO();
+        if (WindowedMode::IsMultiViewportEnabled()) {
+            io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        }
+        else
+            io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
 
         Data::bIsRendering = true;
 
@@ -310,6 +328,14 @@ namespace BaseHook::Hooks
             ID3D11RenderTargetView* oldRtvRaw = pOldRTV.Get();
             Data::pContext11->OMSetRenderTargets(1, &oldRtvRaw, pOldDSV.Get());
             Data::pContext11->RSSetViewports(nViewPorts, pOldViewPorts);
+        }
+
+        // Multi-viewport: update and render platform windows
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
         }
 
         Data::bIsRendering = false;
@@ -406,6 +432,9 @@ namespace BaseHook::Hooks
                 CreateRenderTarget11(pSwapChain);
                 ImGui_ImplDX11_CreateDeviceObjects();
             }
+
+            if (WindowedMode::IsMultiViewportEnabled())
+                WindowedMode::RefreshPlatformWindows();
         }
 
         return hr;

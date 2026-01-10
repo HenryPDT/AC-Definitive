@@ -13,4 +13,7 @@ namespace BaseHook::Hooks
     bool Init();                                // Main initialization
     void Shutdown();                            // Full cleanup
     void FinishInitialization();                // Deferred graphics init
+
+    // Core Window Procedure Hook
+    LRESULT CALLBACK WndProc_Base(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 }

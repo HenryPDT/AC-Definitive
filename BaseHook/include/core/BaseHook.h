@@ -29,6 +29,7 @@ typedef BOOL(WINAPI* GetClientRect_t)(HWND, LPRECT);
 typedef BOOL(WINAPI* GetWindowRect_t)(HWND, LPRECT);
 typedef BOOL(WINAPI* ClientToScreen_t)(HWND, LPPOINT);
 typedef BOOL(WINAPI* ScreenToClient_t)(HWND, LPPOINT);
+typedef HWND(WINAPI* WindowFromPoint_t)(POINT);
 
 typedef LRESULT(CALLBACK* WndProc_t)(HWND, UINT, WPARAM, LPARAM);
 
@@ -65,6 +66,7 @@ namespace BaseHook
         extern HWND              hWindow;
         extern Settings*         pSettings;
         extern bool              bShowMenu;
+        extern bool              bShowConsole;
         extern bool              bIsInitialized;
         extern std::atomic<bool> bIsDetached; // Changed to atomic for thread safety
         extern bool              bBlockInput;
@@ -86,6 +88,7 @@ namespace BaseHook
         extern FARPROC oClientToScreen;
         extern FARPROC oScreenToClient;
         extern FARPROC oGetCursorPos;
+        extern FARPROC oWindowFromPoint;
 
         // Input Management
         extern thread_local bool                   bCallingImGui;   // True when ImGui_ImplWin32_NewFrame is polling inputs
@@ -139,11 +142,13 @@ namespace BaseHook
         // DirectX Version
         int m_DirectXVersion; // 0=Auto, 9, 10, 11
 
+        bool m_RenderInBackground;
+
     public:
         Settings(WndProc_t wndProc = BaseHook::Hooks::WndProc_Base, bool bSaveImGuiIni = false)
             : m_WndProc(wndProc), m_bSaveImGuiIni(bSaveImGuiIni),
               m_WindowedMode(0), m_ResizeBehavior(0), m_WindowPosX(-1), m_WindowPosY(-1), m_WindowWidth(1920), m_WindowHeight(1080),
-              m_CursorClipMode(0), m_DirectXVersion(0)
+              m_CursorClipMode(0), m_DirectXVersion(0), m_RenderInBackground(false)
         {}
 
         // Lifecycle callbacks

@@ -30,6 +30,12 @@ namespace BaseHook
             UnlockWhenMenuOpen = 3
         };
 
+        enum class ViewportScalingMode : int
+        {
+            None = 0,          // Maintain physical screen position/size (virtual pos/size updates)
+            ScalePhysical = 1  // Maintain relative virtual position/size (physical window size updates)
+        };
+
         struct MonitorInfo {
             HMONITOR handle;
             RECT rect;
@@ -74,8 +80,24 @@ namespace BaseHook
             bool isDragging = false;
             POINT dragStartCursor = { 0 };
             RECT dragStartWindow = { 0 };
+
+            // Multi-viewport state
+            bool enableMultiViewport = false;
+            ViewportScalingMode viewportScaling = ViewportScalingMode::ScalePhysical;
+
+            // True when user is dragging via OS title bar (WM_ENTERSIZEMOVE to WM_EXITSIZEMOVE)
+            bool isSystemMoving = false;
         };
         extern State g_State;
+
+        // RAII guard to safely set/reset inInternalChange flag
+        // Prevents bugs from early returns forgetting to reset the flag
+        struct InternalChangeGuard {
+            InternalChangeGuard() { g_State.inInternalChange = true; }
+            ~InternalChangeGuard() { g_State.inInternalChange = false; }
+            InternalChangeGuard(const InternalChangeGuard&) = delete;
+            InternalChangeGuard& operator=(const InternalChangeGuard&) = delete;
+        };
 
         // Initialization
         void EarlyInit(Mode mode, ResizeBehavior resize, int x, int y, int w, int h, int dx, int monitorIdx, int clipMode, int overrideW, int overrideH, bool alwaysOnTop);
@@ -148,10 +170,23 @@ namespace BaseHook
         void ConvertVirtualToPhysical(int& x, int& y, int& w, int& h, bool scaleSize);
         void ConvertPhysicalToVirtual(int& x, int& y);
 
+        // Optimized logic (exposed for advanced use cases if needed, primarily used efficiently in cpp)
+        void ConvertVirtualToPhysical(int& x, int& y, int& w, int& h, bool scaleSize, const RECT& mainClientRect, const POINT& mainClientToScreenOffset);
+        void ConvertPhysicalToVirtual(int& x, int& y, const RECT& mainClientRect, const POINT& mainClientToScreenOffset);
+
         // Helper to scale mouse message LPARAM (client coords) from physical to virtual
         LPARAM ScaleMouseMessage(HWND hWnd, UINT uMsg, LPARAM lParam);
 
         // Window Management
         void HandleDrag(bool isDragging);
+        void SyncStateFromWindow(); // Called after title bar drag to sync position
+
+        // Multi-viewport support
+        bool IsMainViewportWindow(HWND hWnd);
+        bool IsImGuiPlatformWindow(HWND hWnd);
+        bool IsMultiViewportEnabled();
+        void SetMultiViewportEnabled(bool enabled);
+        void SetMultiViewportScalingMode(ViewportScalingMode mode);
+        void RefreshPlatformWindows();
     }
 }

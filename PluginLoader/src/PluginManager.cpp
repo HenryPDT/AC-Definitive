@@ -138,7 +138,7 @@ void PluginManager::DrawPluginMenu()
     ImGui::EndChild();
 }
 
-void* PluginManager::GetPluginInterface(const std::string& name)
+void* PluginManager::GetPluginInterface(const std::string& name) const
 {
     for (const auto& plugin : m_plugins)
     {

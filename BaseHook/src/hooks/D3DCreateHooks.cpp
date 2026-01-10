@@ -2,8 +2,6 @@
 
 #include "hooks/D3DCreateHooks.h"
 #include "hooks/DXGIHooks.h"
-#include "hooks/WindowHooks.h"
-#include "hooks/Hooks.h"
 #include "hooks/DX9Hooks.h"
 #include "hooks/InputHooks.h"
 #include "hooks/WindowHooks.h"

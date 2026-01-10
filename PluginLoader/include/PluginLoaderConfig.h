@@ -12,19 +12,17 @@
 namespace fs = std::filesystem;
 
 namespace PluginLoaderConfig {
-}
-
-namespace PluginLoaderConfig {
 
     using WindowedMode = ::BaseHook::WindowedMode::Mode;
     using ResizeBehavior = ::BaseHook::WindowedMode::ResizeBehavior;
     using DirectXVersion = ::BaseHook::DirectXVersion;
     using CursorClipMode = ::BaseHook::WindowedMode::CursorClipMode;
+    using ViewportScalingMode = ::BaseHook::WindowedMode::ViewportScalingMode;
 
     enum class ImGuiMouseInputSource : int
     {
-        Win32 = 0,
-        DirectInput = 1,
+        DirectInput = 0,
+        Win32 = 1,
     };
 
     struct Config : Serialization::ConfigSection
@@ -54,6 +52,8 @@ namespace PluginLoaderConfig {
         PROPERTY(OverrideResY, int, Serialization::IntegerAdapter_template<int>, 0);
         PROPERTY(AlwaysOnTop, bool, Serialization::BooleanAdapter, false);
         PROPERTY(RenderInBackground, bool, Serialization::BooleanAdapter, false);
+        PROPERTY(EnableMultiViewport, bool, Serialization::BooleanAdapter, false);
+        PROPERTY(MultiViewportScaling, ViewportScalingMode, Serialization::NumericEnumAdapter_template<ViewportScalingMode>, ViewportScalingMode::ScalePhysical);
 
         // Framerate Limiter
         PROPERTY(EnableFPSLimit, bool, Serialization::BooleanAdapter, false);
@@ -63,7 +63,7 @@ namespace PluginLoaderConfig {
         // Overlay mouse *buttons/wheel* routing (overlay only).
         // - Keyboard + mouse movement for overlay stays Win32/WndProc always.
         // - Game input remains split (WndProc movement/keys, DirectInput clicks/wheel).
-        PROPERTY(ImGuiMouseSource, ImGuiMouseInputSource, Serialization::NumericEnumAdapter_template<ImGuiMouseInputSource>, ImGuiMouseInputSource::Win32);
+        PROPERTY(ImGuiMouseSource, ImGuiMouseInputSource, Serialization::NumericEnumAdapter_template<ImGuiMouseInputSource>, ImGuiMouseInputSource::DirectInput);
     };
 
     extern Config g_Config;

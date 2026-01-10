@@ -9,6 +9,7 @@ namespace BaseHook
         HMODULE           thisDLLModule = NULL;
         HWND              hWindow = NULL;
         bool              bShowMenu = false;
+        bool              bShowConsole = false;
         bool              bIsInitialized = false;
         std::atomic<bool> bIsDetached = false;
         bool              bBlockInput = false;
@@ -27,6 +28,7 @@ namespace BaseHook
         FARPROC oClientToScreen = nullptr;
         FARPROC oScreenToClient = nullptr;
         FARPROC oGetCursorPos = nullptr;
+        FARPROC oWindowFromPoint = nullptr;
 
         thread_local bool               bCallingImGui = false;
         std::atomic<unsigned long long> lastXInputTime = 0;
@@ -80,10 +82,11 @@ namespace BaseHook
 
     bool Detach()
     {
-        if (Data::bIsDetached) return true;
+        // Use atomic compare-exchange to prevent race condition if Detach() is called from multiple threads
+        bool expected = false;
+        if (!Data::bIsDetached.compare_exchange_strong(expected, true)) return true;
         
         LOG_INFO("Detaching...");
-        Data::bIsDetached = true;
         
         // 1. Notify user code
         if (Data::pSettings)
@@ -125,11 +128,11 @@ namespace BaseHook
                 std::filesystem::path fontPath = fontsDir / fontName;
                 if (std::filesystem::exists(fontPath))
                 {
-                    io.Fonts->Clear();
+                    io.Fonts->Clear(); // Clear default font atlas before adding system font
                     ImFontConfig config;
                     io.Fonts->AddFontFromFileTTF(fontPath.string().c_str(), 16.0f, &config);
                     LOG_INFO("Loaded system font: %s", fontName);
-                    return; 
+                    return; // Exit after first successful font load
                 }
             }
         }

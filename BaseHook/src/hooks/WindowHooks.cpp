@@ -37,6 +37,11 @@ namespace BaseHook
         typedef BOOL(WINAPI* SetCursorPos_t)(int, int);
         typedef BOOL(WINAPI* ClipCursor_t)(const RECT*);
         typedef BOOL(WINAPI* SetWindowPlacement_t)(HWND, const WINDOWPLACEMENT*);
+        typedef HWND(WINAPI* WindowFromPoint_t)(POINT);
+        typedef HWND(WINAPI* GetForegroundWindow_t)();
+        typedef HWND(WINAPI* GetActiveWindow_t)();
+        typedef HWND(WINAPI* GetFocus_t)();
+        typedef BOOL(WINAPI* IsIconic_t)(HWND);
 
         // --- Original Pointers ---
         CreateWindowExA_t oCreateWindowExA = nullptr;
@@ -61,6 +66,10 @@ namespace BaseHook
         SetCursorPos_t oSetCursorPos = nullptr;
         ClipCursor_t oClipCursor = nullptr;
         SetWindowPlacement_t oSetWindowPlacement = nullptr;
+        GetForegroundWindow_t oGetForegroundWindow = nullptr;
+        GetActiveWindow_t oGetActiveWindow = nullptr;
+        GetFocus_t oGetFocus = nullptr;
+        IsIconic_t oIsIconic = nullptr;
 
         // (D3D/DXGI creation hooks moved to hooks/D3DCreateHooks.cpp)
 
@@ -120,6 +129,8 @@ namespace BaseHook
                         LOG_INFO("IsIgnoredWindowClass: Ignored D3DProxyWindow");
                         return true;
                     }
+                    // Ignore ImGui viewport windows so we don't modify their styles
+                    if (contains(lpClassName, "ImGui Platform")) return true;
                 }
                 else {
                     if (equals(lpClassName, L"ConsoleWindowClass")) return true;
@@ -132,6 +143,8 @@ namespace BaseHook
                         // LOG_INFO("IsIgnoredWindowClass: Ignored D3DProxyWindow (Wide)");
                         return true;
                     }
+                    // Ignore ImGui viewport windows so we don't modify their styles
+                    if (contains(lpClassName, L"ImGui Platform")) return true;
                 }
             }
 
@@ -157,13 +170,28 @@ namespace BaseHook
             return false;
         }
 
+        static LRESULT CALLBACK ViewportWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+        {
+            WNDPROC originalWndProc = (WNDPROC)GetPropW(hWnd, L"oWndProc");
+            if (!originalWndProc)
+                return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+
+            // Scale mouse coordinates from Physical to Virtual for this window
+            lParam = WindowedMode::ScaleMouseMessage(hWnd, uMsg, lParam);
+
+            if (uMsg == WM_NCDESTROY)
+                RemovePropW(hWnd, L"oWndProc");
+
+            return CallWindowProcW(originalWndProc, hWnd, uMsg, wParam, lParam);
+        }
+
         template <typename CharT>
         void ApplyWindowCreationOverrides(const CharT* className, const CharT* windowName, DWORD& dwStyle, DWORD& dwExStyle, int& X, int& Y, int& nWidth, int& nHeight)
         {
             // Sanitize Styles
             if (WindowedMode::g_State.activeMode == WindowedMode::Mode::BorderlessFullscreen || WindowedMode::g_State.activeMode == WindowedMode::Mode::Borderless) {
-                dwStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-                dwStyle |= WS_POPUP;
+                dwStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+                dwStyle |= WS_SYSMENU | WS_POPUP;
             }
             else if (WindowedMode::g_State.activeMode == WindowedMode::Mode::Bordered) {
                 dwStyle |= WS_OVERLAPPEDWINDOW;
@@ -238,43 +266,77 @@ namespace BaseHook
         }
 
         // --- Hook Implementations ---
+        BOOL WINAPI hkGetClientRect(HWND hWnd, LPRECT lpRect);
+        BOOL WINAPI hkGetWindowRect(HWND hWnd, LPRECT lpRect);
 
         BOOL WINAPI hkScreenToClient(HWND hWnd, LPPOINT lpPoint)
         {
-            BOOL res = ((ScreenToClient_t)Data::oScreenToClient)(hWnd, lpPoint);
-            if (res)
-                WindowedMode::PhysicalClientToVirtual(hWnd, *lpPoint);
-            return res;
+            if (WindowedMode::ShouldHandle()) {
+                RECT rc;
+                if (hkGetWindowRect(hWnd, &rc)) {
+                    lpPoint->x -= rc.left;
+                    lpPoint->y -= rc.top;
+                    return TRUE;
+                }
+            }
+            return ((ScreenToClient_t)Data::oScreenToClient)(hWnd, lpPoint);
         }
 
         BOOL WINAPI hkClientToScreen(HWND hWnd, LPPOINT lpPoint)
         {
-            WindowedMode::VirtualClientToPhysical(hWnd, *lpPoint);
+            if (WindowedMode::ShouldHandle()) {
+                RECT rc;
+                if (hkGetWindowRect(hWnd, &rc)) {
+                    lpPoint->x += rc.left;
+                    lpPoint->y += rc.top;
+                    return TRUE;
+                }
+            }
             return ((ClientToScreen_t)Data::oClientToScreen)(hWnd, lpPoint);
         }
 
         BOOL WINAPI hkGetClientRect(HWND hWnd, LPRECT lpRect)
         {
-            if (WindowedMode::ShouldHandle() && hWnd == Data::hWindow) {
-                lpRect->left = 0;
-                lpRect->top = 0;
-                lpRect->right = WindowedMode::g_State.virtualWidth;
-                lpRect->bottom = WindowedMode::g_State.virtualHeight;
-                return TRUE;
+            BOOL res = ((GetClientRect_t)Data::oGetClientRect)(hWnd, lpRect);
+            if (res && WindowedMode::ShouldHandle()) {
+                if (hWnd == Data::hWindow) {
+                    lpRect->left = 0;
+                    lpRect->top = 0;
+                    lpRect->right = WindowedMode::g_State.virtualWidth;
+                    lpRect->bottom = WindowedMode::g_State.virtualHeight;
+                }
+                else if (WindowedMode::IsImGuiPlatformWindow(hWnd)) {
+                    POINT br = { lpRect->right, lpRect->bottom };
+                    WindowedMode::PhysicalClientToVirtual(hWnd, br);
+                    lpRect->right = br.x;
+                    lpRect->bottom = br.y;
+                }
             }
-            return ((GetClientRect_t)Data::oGetClientRect)(hWnd, lpRect);
+            return res;
         }
 
         BOOL WINAPI hkGetWindowRect(HWND hWnd, LPRECT lpRect)
         {
-            if (WindowedMode::ShouldHandle() && hWnd == Data::hWindow) {
-                lpRect->left = 0;
-                lpRect->top = 0;
-                lpRect->right = WindowedMode::g_State.virtualWidth;
-                lpRect->bottom = WindowedMode::g_State.virtualHeight;
-                return TRUE;
+            BOOL res = ((GetWindowRect_t)Data::oGetWindowRect)(hWnd, lpRect);
+            if (res && WindowedMode::ShouldHandle()) {
+                if (hWnd == Data::hWindow) {
+                    lpRect->left = 0;
+                    lpRect->top = 0;
+                    lpRect->right = WindowedMode::g_State.virtualWidth;
+                    lpRect->bottom = WindowedMode::g_State.virtualHeight;
+                }
+                else if (WindowedMode::IsImGuiPlatformWindow(hWnd)) {
+                    POINT tl = { lpRect->left, lpRect->top };
+                    POINT br = { lpRect->right, lpRect->bottom };
+                    WindowedMode::ConvertPhysicalToVirtual((int&)tl.x, (int&)tl.y);
+                    WindowedMode::ConvertPhysicalToVirtual((int&)br.x, (int&)br.y);
+                    lpRect->left = tl.x;
+                    lpRect->top = tl.y;
+                    lpRect->right = br.x;
+                    lpRect->bottom = br.y;
+                }
             }
-            return ((GetWindowRect_t)Data::oGetWindowRect)(hWnd, lpRect);
+            return res;
         }
 
         HWND WINAPI hkCreateWindowExA(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
@@ -287,11 +349,24 @@ namespace BaseHook
             }
 
             bool bIgnored = IsIgnoredWindowClass(lpClassName, lpWindowName, nWidth, nHeight);
-            if (WindowedMode::ShouldHandle() && !hWndParent && !bIgnored) {
-                ApplyWindowCreationOverrides(lpClassName, lpWindowName, dwStyle, dwExStyle, X, Y, nWidth, nHeight);
+            bool bIsImGui = lpClassName && !IS_INTRESOURCE(lpClassName) && strstr(lpClassName, "ImGui Platform") != nullptr;
+
+            if (WindowedMode::ShouldHandle() && !hWndParent) {
+                if (!bIgnored) {
+                    ApplyWindowCreationOverrides(lpClassName, lpWindowName, dwStyle, dwExStyle, X, Y, nWidth, nHeight);
+                }
+                else if (bIsImGui) {
+                    // Scale ImGui platform windows from Virtual to Physical coordinates
+                    WindowedMode::ConvertVirtualToPhysical(X, Y, nWidth, nHeight, true);
+                }
             }
 
             HWND hWnd = oCreateWindowExA(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+
+            if (hWnd && bIsImGui) {
+                WNDPROC oPrec = (WNDPROC)SetWindowLongPtrW(hWnd, GWLP_WNDPROC, (LONG_PTR)ViewportWndProc);
+                SetPropW(hWnd, L"oWndProc", (HANDLE)oPrec);
+            }
 
             if (hWnd && !hWndParent && !bIgnored) {
                 if (WindowedMode::ShouldHandle()) {
@@ -320,11 +395,24 @@ namespace BaseHook
         HWND WINAPI hkCreateWindowExW(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
         {
             bool bIgnored = IsIgnoredWindowClass(lpClassName, lpWindowName, nWidth, nHeight);
-            if (WindowedMode::ShouldHandle() && !hWndParent && !bIgnored) {
-                ApplyWindowCreationOverrides(lpClassName, lpWindowName, dwStyle, dwExStyle, X, Y, nWidth, nHeight);
+            bool bIsImGui = lpClassName && !IS_INTRESOURCE(lpClassName) && wcsstr(lpClassName, L"ImGui Platform") != nullptr;
+
+            if (WindowedMode::ShouldHandle() && !hWndParent) {
+                if (!bIgnored) {
+                    ApplyWindowCreationOverrides(lpClassName, lpWindowName, dwStyle, dwExStyle, X, Y, nWidth, nHeight);
+                }
+                else if (bIsImGui) {
+                    // Scale ImGui platform windows from Virtual to Physical coordinates
+                    WindowedMode::ConvertVirtualToPhysical(X, Y, nWidth, nHeight, true);
+                }
             }
 
             HWND hWnd = oCreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+
+            if (hWnd && bIsImGui) {
+                WNDPROC oPrec = (WNDPROC)SetWindowLongPtrW(hWnd, GWLP_WNDPROC, (LONG_PTR)ViewportWndProc);
+                SetPropW(hWnd, L"oWndProc", (HANDLE)oPrec);
+            }
             
             if (hWnd && !hWndParent && !bIgnored) {
                 if (WindowedMode::ShouldHandle()) {
@@ -352,65 +440,62 @@ namespace BaseHook
 
         BOOL WINAPI hkSetWindowPos(HWND hWnd, HWND hWndInsertAfter, int X, int Y, int cx, int cy, UINT uFlags)
         {
-            if (WindowedMode::ShouldHandle() && hWnd == Data::hWindow && !WindowedMode::g_State.inInternalChange) {
-                if (WindowedMode::g_State.alwaysOnTop) {
-                    hWndInsertAfter = HWND_TOPMOST;
-                }
-                else if (hWndInsertAfter == HWND_TOPMOST) {
-                    hWndInsertAfter = HWND_NOTOPMOST;
-                }
+            if (WindowedMode::ShouldHandle() && !WindowedMode::g_State.inInternalChange) {
+                if (hWnd == Data::hWindow) {
+                    if (WindowedMode::g_State.alwaysOnTop) {
+                        hWndInsertAfter = HWND_TOPMOST;
+                    }
+                    else if (hWndInsertAfter == HWND_TOPMOST) {
+                        hWndInsertAfter = HWND_NOTOPMOST;
+                    }
 
-                // Enforce Position/Size if game tries to change it
-                // Logic:
-                // 1. If ScaleContent, enforce fixed Size.
-                // 2. Always enforce fixed Position (or Center) to prevent D3D from moving window to (0,0) on Reset.
+                    // Enforce Position/Size if game tries to change it
+                    bool enforceSize = (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent);
+                    // Don't enforce position during user-initiated title bar drag
+                    bool enforcePos = !WindowedMode::g_State.isSystemMoving;
 
-                bool enforceSize = (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent);
-                bool enforcePos = true;
-
-                if (enforceSize)
-                {
-                    if (!(uFlags & SWP_NOSIZE)) {
+                    if (enforceSize && !(uFlags & SWP_NOSIZE)) {
                         cx = WindowedMode::g_State.windowWidth;
                         cy = WindowedMode::g_State.windowHeight;
                     }
+
+                    if (enforcePos && !(uFlags & SWP_NOMOVE)) {
+                        int w = cx;
+                        int h = cy;
+                        if (uFlags & SWP_NOSIZE) {
+                            RECT rc;
+                            if (Data::oGetWindowRect) ((GetWindowRect_t)Data::oGetWindowRect)(hWnd, &rc);
+                            else GetWindowRect(hWnd, &rc);
+                            w = rc.right - rc.left;
+                            h = rc.bottom - rc.top;
+                        }
+
+                        int desiredX = WindowedMode::g_State.windowX;
+                        int desiredY = WindowedMode::g_State.windowY;
+
+                        if (desiredX == -1 || desiredY == -1) {
+                            RECT monitorRect = { 0,0,0,0 };
+                            const auto& mons = WindowedMode::GetMonitors();
+                            if (WindowedMode::g_State.targetMonitor >= 0 && WindowedMode::g_State.targetMonitor < (int)mons.size()) {
+                                monitorRect = mons[WindowedMode::g_State.targetMonitor].rect;
+                            }
+                            else {
+                                int sW = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CXSCREEN) : GetSystemMetrics(SM_CXSCREEN);
+                                int sH = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CYSCREEN) : GetSystemMetrics(SM_CYSCREEN);
+                                monitorRect = { 0, 0, sW, sH };
+                            }
+
+                            if (desiredX == -1) desiredX = monitorRect.left + (monitorRect.right - monitorRect.left - w) / 2;
+                            if (desiredY == -1) desiredY = monitorRect.top + (monitorRect.bottom - monitorRect.top - h) / 2;
+                        }
+
+                        X = desiredX;
+                        Y = desiredY;
+                    }
                 }
-
-                if (enforcePos && !(uFlags & SWP_NOMOVE))
-                {
-                    // We need to determine the effective width/height to calculate center
-                    int w = cx;
-                    int h = cy;
-                    if (uFlags & SWP_NOSIZE) {
-                        RECT rc;
-                        if (Data::oGetWindowRect) ((GetWindowRect_t)Data::oGetWindowRect)(hWnd, &rc);
-                        else GetWindowRect(hWnd, &rc);
-                        w = rc.right - rc.left;
-                        h = rc.bottom - rc.top;
-                    }
-
-                    int desiredX = WindowedMode::g_State.windowX;
-                    int desiredY = WindowedMode::g_State.windowY;
-
-                    // If set to Center (-1), calculate centered coordinates
-                    if (desiredX == -1 || desiredY == -1) {
-                        RECT monitorRect = { 0,0,0,0 };
-                        const auto& mons = WindowedMode::GetMonitors();
-                        if (WindowedMode::g_State.targetMonitor >= 0 && WindowedMode::g_State.targetMonitor < (int)mons.size()) {
-                            monitorRect = mons[WindowedMode::g_State.targetMonitor].rect;
-                        }
-                        else {
-                            int sW = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CXSCREEN) : GetSystemMetrics(SM_CXSCREEN);
-                            int sH = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CYSCREEN) : GetSystemMetrics(SM_CYSCREEN);
-                            monitorRect = { 0, 0, sW, sH };
-                        }
-
-                        if (desiredX == -1) desiredX = monitorRect.left + (monitorRect.right - monitorRect.left - w) / 2;
-                        if (desiredY == -1) desiredY = monitorRect.top + (monitorRect.bottom - monitorRect.top - h) / 2;
-                    }
-
-                    X = desiredX;
-                    Y = desiredY;
+                else if (WindowedMode::IsImGuiPlatformWindow(hWnd)) {
+                    // Scale Virtual units from ImGui to Physical units for Win32
+                    WindowedMode::ConvertVirtualToPhysical(X, Y, cx, cy, !(uFlags & SWP_NOSIZE));
                 }
             }
             return oSetWindowPos(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
@@ -418,37 +503,43 @@ namespace BaseHook
 
         BOOL WINAPI hkMoveWindow(HWND hWnd, int X, int Y, int nWidth, int nHeight, BOOL bRepaint)
         {
-            if (WindowedMode::ShouldHandle() && hWnd == Data::hWindow && !WindowedMode::g_State.inInternalChange) {
-                bool enforceSize = (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent);
-                bool enforcePos = true;
+            if (WindowedMode::ShouldHandle() && !WindowedMode::g_State.inInternalChange) {
+                if (hWnd == Data::hWindow) {
+                    bool enforceSize = (WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent);
+                    // Don't enforce position during user-initiated title bar drag
+                    bool enforcePos = !WindowedMode::g_State.isSystemMoving;
 
-                if (enforceSize) {
-                    nWidth = WindowedMode::g_State.windowWidth;
-                    nHeight = WindowedMode::g_State.windowHeight;
-                }
-
-                if (enforcePos) {
-                    int desiredX = WindowedMode::g_State.windowX;
-                    int desiredY = WindowedMode::g_State.windowY;
-
-                    if (desiredX == -1 || desiredY == -1) {
-                        RECT monitorRect = { 0,0,0,0 };
-                        const auto& mons = WindowedMode::GetMonitors();
-                        if (WindowedMode::g_State.targetMonitor >= 0 && WindowedMode::g_State.targetMonitor < (int)mons.size()) {
-                            monitorRect = mons[WindowedMode::g_State.targetMonitor].rect;
-                        }
-                        else {
-                            int sW = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CXSCREEN) : GetSystemMetrics(SM_CXSCREEN);
-                            int sH = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CYSCREEN) : GetSystemMetrics(SM_CYSCREEN);
-                            monitorRect = { 0, 0, sW, sH };
-                        }
-
-                        if (desiredX == -1) desiredX = monitorRect.left + (monitorRect.right - monitorRect.left - nWidth) / 2;
-                        if (desiredY == -1) desiredY = monitorRect.top + (monitorRect.bottom - monitorRect.top - nHeight) / 2;
+                    if (enforceSize) {
+                        nWidth = WindowedMode::g_State.windowWidth;
+                        nHeight = WindowedMode::g_State.windowHeight;
                     }
 
-                    X = desiredX;
-                    Y = desiredY;
+                    if (enforcePos) {
+                        int desiredX = WindowedMode::g_State.windowX;
+                        int desiredY = WindowedMode::g_State.windowY;
+
+                        if (desiredX == -1 || desiredY == -1) {
+                            RECT monitorRect = { 0,0,0,0 };
+                            const auto& mons = WindowedMode::GetMonitors();
+                            if (WindowedMode::g_State.targetMonitor >= 0 && WindowedMode::g_State.targetMonitor < (int)mons.size()) {
+                                monitorRect = mons[WindowedMode::g_State.targetMonitor].rect;
+                            }
+                            else {
+                                int sW = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CXSCREEN) : GetSystemMetrics(SM_CXSCREEN);
+                                int sH = Data::oGetSystemMetrics ? ((GetSystemMetrics_t)Data::oGetSystemMetrics)(SM_CYSCREEN) : GetSystemMetrics(SM_CYSCREEN);
+                                monitorRect = { 0, 0, sW, sH };
+                            }
+
+                            if (desiredX == -1) desiredX = monitorRect.left + (monitorRect.right - monitorRect.left - nWidth) / 2;
+                            if (desiredY == -1) desiredY = monitorRect.top + (monitorRect.bottom - monitorRect.top - nHeight) / 2;
+                        }
+
+                        X = desiredX;
+                        Y = desiredY;
+                    }
+                }
+                else if (WindowedMode::IsImGuiPlatformWindow(hWnd)) {
+                    WindowedMode::ConvertVirtualToPhysical(X, Y, nWidth, nHeight, true);
                 }
             }
             return oMoveWindow(hWnd, X, Y, nWidth, nHeight, bRepaint);
@@ -584,6 +675,72 @@ namespace BaseHook
             return oSetCursorPos(x, y);
         }
 
+        HWND WINAPI hkWindowFromPoint(POINT Point)
+        {
+            if (WindowedMode::ShouldHandle() && WindowedMode::g_State.virtualWidth > 0)
+            {
+                int px = Point.x, py = Point.y, pw = 0, ph = 0;
+                WindowedMode::ConvertVirtualToPhysical(px, py, pw, ph, false);
+                Point.x = px;
+                Point.y = py;
+            }
+            return ((WindowFromPoint_t)Data::oWindowFromPoint)(Point);
+        }
+
+        HWND WINAPI hkGetForegroundWindow()
+        {
+            HWND hWnd = oGetForegroundWindow();
+            if (Data::hWindow && WindowedMode::IsImGuiPlatformWindow(hWnd))
+            {
+                DWORD pid = 0;
+                GetWindowThreadProcessId(hWnd, &pid);
+                if (pid == GetCurrentProcessId())
+                    return Data::hWindow;
+            }
+            return hWnd;
+        }
+
+        HWND WINAPI hkGetActiveWindow()
+        {
+            HWND hWnd = oGetActiveWindow();
+            if (Data::hWindow && WindowedMode::IsImGuiPlatformWindow(hWnd))
+            {
+                DWORD pid = 0;
+                GetWindowThreadProcessId(hWnd, &pid);
+                if (pid == GetCurrentProcessId())
+                    return Data::hWindow;
+            }
+            return hWnd;
+        }
+
+        HWND WINAPI hkGetFocus()
+        {
+            HWND hWnd = oGetFocus();
+            if (Data::hWindow && WindowedMode::IsImGuiPlatformWindow(hWnd))
+            {
+                DWORD pid = 0;
+                GetWindowThreadProcessId(hWnd, &pid);
+                if (pid == GetCurrentProcessId())
+                    return Data::hWindow;
+            }
+            return hWnd;
+        }
+
+        BOOL WINAPI hkIsIconic(HWND hWnd)
+        {
+            // If the game asks if it's minimized, lie and say no if an ImGui window is in front.
+            if (hWnd == Data::hWindow || WindowedMode::IsImGuiPlatformWindow(hWnd)) {
+                HWND fg = oGetForegroundWindow();
+                if (fg && (fg == Data::hWindow || WindowedMode::IsImGuiPlatformWindow(fg))) {
+                    DWORD pid = 0;
+                    GetWindowThreadProcessId(fg, &pid);
+                    if (pid == GetCurrentProcessId())
+                        return FALSE;
+                }
+            }
+            return oIsIconic(hWnd);
+        }
+
         BOOL WINAPI hkClipCursor(const RECT* lpRect)
         {
             // 0=Default, 1=Confine, 2=Unlock, 3=UnlockWhenMenuOpen
@@ -592,22 +749,22 @@ namespace BaseHook
 
             if (WindowedMode::g_State.cursorClipMode == 3) // UnlockWhenMenuOpen
             {
-                if (Data::bShowMenu)
+                if (Data::bShowMenu || Data::bShowConsole)
                     return oClipCursor(NULL);
                 // else fall through to Confine logic
             }
 
-            if (WindowedMode::ShouldHandle() && WindowedMode::g_State.hWnd) {
+            if (WindowedMode::ShouldHandle() && Data::hWindow) {
                 if (WindowedMode::g_State.cursorClipMode == 1 || WindowedMode::g_State.cursorClipMode == 3) // Confine or UnlockWhenMenuOpen (closed)
                 {
                     // If game tries to unclip (lpRect=NULL), force clip to window.
                     if (!lpRect) {
                         RECT clientRect;
-                        if (((GetClientRect_t)Data::oGetClientRect)(WindowedMode::g_State.hWnd, &clientRect)) {
+                        if (((GetClientRect_t)Data::oGetClientRect)(Data::hWindow, &clientRect)) {
                             POINT ul = { clientRect.left, clientRect.top };
                             POINT lr = { clientRect.right, clientRect.bottom };
-                            ((ClientToScreen_t)Data::oClientToScreen)(WindowedMode::g_State.hWnd, &ul);
-                            ((ClientToScreen_t)Data::oClientToScreen)(WindowedMode::g_State.hWnd, &lr);
+                            ((ClientToScreen_t)Data::oClientToScreen)(Data::hWindow, &ul);
+                            ((ClientToScreen_t)Data::oClientToScreen)(Data::hWindow, &lr);
                             RECT finalRect = { ul.x, ul.y, lr.x, lr.y };
                             return oClipCursor(&finalRect);
                         }
@@ -618,11 +775,11 @@ namespace BaseHook
                 
                 // Game clips to Virtual Screen. We clip to Physical Client.
                 RECT clientRect;
-                if (((GetClientRect_t)Data::oGetClientRect)(WindowedMode::g_State.hWnd, &clientRect)) {
+                if (((GetClientRect_t)Data::oGetClientRect)(Data::hWindow, &clientRect)) {
                     POINT ul = { clientRect.left, clientRect.top };
                     POINT lr = { clientRect.right, clientRect.bottom };
-                    ((ClientToScreen_t)Data::oClientToScreen)(WindowedMode::g_State.hWnd, &ul);
-                    ((ClientToScreen_t)Data::oClientToScreen)(WindowedMode::g_State.hWnd, &lr);
+                    ((ClientToScreen_t)Data::oClientToScreen)(Data::hWindow, &ul);
+                    ((ClientToScreen_t)Data::oClientToScreen)(Data::hWindow, &lr);
                     RECT finalRect = { ul.x, ul.y, lr.x, lr.y };
                     return oClipCursor(&finalRect);
                 }
@@ -661,7 +818,7 @@ namespace BaseHook
                     if (WindowedMode::g_State.activeMode == WindowedMode::Mode::BorderlessFullscreen || 
                         WindowedMode::g_State.activeMode == WindowedMode::Mode::Borderless)
                     {
-                        res = (res & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU)) | WS_POPUP;
+                        res = (res & ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) | WS_SYSMENU | WS_POPUP;
                     }
                     else if (WindowedMode::g_State.activeMode == WindowedMode::Mode::Bordered)
                     {
@@ -724,6 +881,11 @@ namespace BaseHook
                     oSetCursorPos = (SetCursorPos_t)GetProcAddress(hUser, "SetCursorPos");
                     oClipCursor = (ClipCursor_t)GetProcAddress(hUser, "ClipCursor");
                     oSetWindowPlacement = (SetWindowPlacement_t)GetProcAddress(hUser, "SetWindowPlacement");
+                    oGetForegroundWindow = (GetForegroundWindow_t)GetProcAddress(hUser, "GetForegroundWindow");
+                    oGetActiveWindow = (GetActiveWindow_t)GetProcAddress(hUser, "GetActiveWindow");
+                    oGetFocus = (GetFocus_t)GetProcAddress(hUser, "GetFocus");
+                    oIsIconic = (IsIconic_t)GetProcAddress(hUser, "IsIconic");
+                    Data::oWindowFromPoint = GetProcAddress(hUser, "WindowFromPoint");
                     oGetWindowLongA = (GetWindowLongA_t)GetProcAddress(hUser, "GetWindowLongA");
                     oGetWindowLongW = (GetWindowLongW_t)GetProcAddress(hUser, "GetWindowLongW");
                     oSetWindowLongA = (SetWindowLongA_t)GetProcAddress(hUser, "SetWindowLongA");
@@ -734,44 +896,50 @@ namespace BaseHook
                     oSetWindowLongPtrA = (SetWindowLongPtrA_t)GetProcAddress(hUser, "SetWindowLongPtrA");
                     oSetWindowLongPtrW = (SetWindowLongPtrW_t)GetProcAddress(hUser, "SetWindowLongPtrW");
 
-                    // Helper to hook safe imports
-                    auto Hook = [&](void* addr, void* hook, void** orig) {
+                    // Helper to create hooks (deferred enabling for batching optimization)
+                    auto CreateHookOnly = [&](void* addr, void* hook, void** orig) {
                         if (addr && hook) {
-                            if (MH_CreateHook(addr, hook, orig) == MH_OK) {
-                                MH_EnableHook(addr);
-                            }
+                            MH_CreateHook(addr, hook, orig);
                         }
                     };
 
-                    Hook((void*)oCreateWindowExA, hkCreateWindowExA, (void**)&oCreateWindowExA);
-                    Hook((void*)oCreateWindowExW, hkCreateWindowExW, (void**)&oCreateWindowExW);
-                    Hook((void*)oSetWindowPos, hkSetWindowPos, (void**)&oSetWindowPos);
-                    Hook((void*)oMoveWindow, hkMoveWindow, (void**)&oMoveWindow);
-                    Hook((void*)oChangeDisplaySettingsA, hkChangeDisplaySettingsA, (void**)&oChangeDisplaySettingsA);
-                    Hook((void*)oChangeDisplaySettingsW, hkChangeDisplaySettingsW, (void**)&oChangeDisplaySettingsW);
-                    Hook((void*)oChangeDisplaySettingsExA, hkChangeDisplaySettingsExA, (void**)&oChangeDisplaySettingsExA);
-                    Hook((void*)oChangeDisplaySettingsExW, hkChangeDisplaySettingsExW, (void**)&oChangeDisplaySettingsExW);
-                    Hook((void*)Data::oGetSystemMetrics, hkGetSystemMetrics, (void**)&Data::oGetSystemMetrics);
-                    Hook((void*)oEnumDisplaySettingsA, hkEnumDisplaySettingsA, (void**)&oEnumDisplaySettingsA);
-                    Hook((void*)oEnumDisplaySettingsW, hkEnumDisplaySettingsW, (void**)&oEnumDisplaySettingsW);
-                    Hook((void*)Data::oAdjustWindowRectEx, hkAdjustWindowRectEx, (void**)&Data::oAdjustWindowRectEx);
-                    Hook((void*)oGetCursorPos, hkGetCursorPos, (void**)&oGetCursorPos);
+                    CreateHookOnly((void*)oCreateWindowExA, hkCreateWindowExA, (void**)&oCreateWindowExA);
+                    CreateHookOnly((void*)oCreateWindowExW, hkCreateWindowExW, (void**)&oCreateWindowExW);
+                    CreateHookOnly((void*)oSetWindowPos, hkSetWindowPos, (void**)&oSetWindowPos);
+                    CreateHookOnly((void*)oMoveWindow, hkMoveWindow, (void**)&oMoveWindow);
+                    CreateHookOnly((void*)oChangeDisplaySettingsA, hkChangeDisplaySettingsA, (void**)&oChangeDisplaySettingsA);
+                    CreateHookOnly((void*)oChangeDisplaySettingsW, hkChangeDisplaySettingsW, (void**)&oChangeDisplaySettingsW);
+                    CreateHookOnly((void*)oChangeDisplaySettingsExA, hkChangeDisplaySettingsExA, (void**)&oChangeDisplaySettingsExA);
+                    CreateHookOnly((void*)oChangeDisplaySettingsExW, hkChangeDisplaySettingsExW, (void**)&oChangeDisplaySettingsExW);
+                    CreateHookOnly((void*)Data::oGetSystemMetrics, hkGetSystemMetrics, (void**)&Data::oGetSystemMetrics);
+                    CreateHookOnly((void*)oEnumDisplaySettingsA, hkEnumDisplaySettingsA, (void**)&oEnumDisplaySettingsA);
+                    CreateHookOnly((void*)oEnumDisplaySettingsW, hkEnumDisplaySettingsW, (void**)&oEnumDisplaySettingsW);
+                    CreateHookOnly((void*)Data::oAdjustWindowRectEx, hkAdjustWindowRectEx, (void**)&Data::oAdjustWindowRectEx);
+                    CreateHookOnly((void*)oGetCursorPos, hkGetCursorPos, (void**)&oGetCursorPos);
                     Data::oGetCursorPos = (FARPROC)oGetCursorPos;
-                    Hook((void*)oSetCursorPos, hkSetCursorPos, (void**)&oSetCursorPos);
-                    Hook((void*)oClipCursor, hkClipCursor, (void**)&oClipCursor);
-                    Hook((void*)oSetWindowPlacement, hkSetWindowPlacement, (void**)&oSetWindowPlacement);
-                    Hook((void*)Data::oScreenToClient, hkScreenToClient, (void**)&Data::oScreenToClient);
-                    Hook((void*)Data::oClientToScreen, hkClientToScreen, (void**)&Data::oClientToScreen);
-                    Hook((void*)Data::oGetClientRect, hkGetClientRect, (void**)&Data::oGetClientRect);
-                    Hook((void*)Data::oGetWindowRect, hkGetWindowRect, (void**)&Data::oGetWindowRect);
-                    Hook((void*)oGetWindowLongA, hkGetWindowLongA, (void**)&oGetWindowLongA);
-                    Hook((void*)oGetWindowLongW, hkGetWindowLongW, (void**)&oGetWindowLongW);
-                    Hook((void*)oGetWindowLongPtrA, hkGetWindowLongPtrA, (void**)&oGetWindowLongPtrA);
-                    Hook((void*)oGetWindowLongPtrW, hkGetWindowLongPtrW, (void**)&oGetWindowLongPtrW);
-                    Hook((void*)oSetWindowLongA, hkSetWindowLongA, (void**)&oSetWindowLongA);
-                    Hook((void*)oSetWindowLongW, hkSetWindowLongW, (void**)&oSetWindowLongW);
-                    Hook((void*)oSetWindowLongPtrA, hkSetWindowLongPtrA, (void**)&oSetWindowLongPtrA);
-                    Hook((void*)oSetWindowLongPtrW, hkSetWindowLongPtrW, (void**)&oSetWindowLongPtrW);
+                    CreateHookOnly((void*)oSetCursorPos, hkSetCursorPos, (void**)&oSetCursorPos);
+                    CreateHookOnly((void*)oClipCursor, hkClipCursor, (void**)&oClipCursor);
+                    CreateHookOnly((void*)oSetWindowPlacement, hkSetWindowPlacement, (void**)&oSetWindowPlacement);
+                    CreateHookOnly((void*)oGetForegroundWindow, hkGetForegroundWindow, (void**)&oGetForegroundWindow);
+                    CreateHookOnly((void*)oGetActiveWindow, hkGetActiveWindow, (void**)&oGetActiveWindow);
+                    CreateHookOnly((void*)oGetFocus, hkGetFocus, (void**)&oGetFocus);
+                    CreateHookOnly((void*)oIsIconic, hkIsIconic, (void**)&oIsIconic);
+                    CreateHookOnly((void*)Data::oWindowFromPoint, hkWindowFromPoint, (void**)&Data::oWindowFromPoint);
+                    CreateHookOnly((void*)Data::oScreenToClient, hkScreenToClient, (void**)&Data::oScreenToClient);
+                    CreateHookOnly((void*)Data::oClientToScreen, hkClientToScreen, (void**)&Data::oClientToScreen);
+                    CreateHookOnly((void*)Data::oGetClientRect, hkGetClientRect, (void**)&Data::oGetClientRect);
+                    CreateHookOnly((void*)Data::oGetWindowRect, hkGetWindowRect, (void**)&Data::oGetWindowRect);
+                    CreateHookOnly((void*)oGetWindowLongA, hkGetWindowLongA, (void**)&oGetWindowLongA);
+                    CreateHookOnly((void*)oGetWindowLongW, hkGetWindowLongW, (void**)&oGetWindowLongW);
+                    CreateHookOnly((void*)oGetWindowLongPtrA, hkGetWindowLongPtrA, (void**)&oGetWindowLongPtrA);
+                    CreateHookOnly((void*)oGetWindowLongPtrW, hkGetWindowLongPtrW, (void**)&oGetWindowLongPtrW);
+                    CreateHookOnly((void*)oSetWindowLongA, hkSetWindowLongA, (void**)&oSetWindowLongA);
+                    CreateHookOnly((void*)oSetWindowLongW, hkSetWindowLongW, (void**)&oSetWindowLongW);
+                    CreateHookOnly((void*)oSetWindowLongPtrA, hkSetWindowLongPtrA, (void**)&oSetWindowLongPtrA);
+                    CreateHookOnly((void*)oSetWindowLongPtrW, hkSetWindowLongPtrW, (void**)&oSetWindowLongPtrW);
+
+                    // Enable all hooks at once (more efficient than enabling individually)
+                    MH_EnableHook(MH_ALL_HOOKS);
 
                     s_User32Hooked = true;
                 }

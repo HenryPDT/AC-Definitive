@@ -67,11 +67,7 @@ namespace BaseHook
 
             HRESULT hr = Data::oPresent9(pDevice, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
             if (hr == D3DERR_DEVICELOST) {
-                 static bool s_loggedLostPresent = false;
-                 if (!s_loggedLostPresent) {
-                     LOG_WARN("hkPresent9: Result=DEVICELOST");
-                     s_loggedLostPresent = true;
-                 }
+                LOG_THROTTLED(5000, "hkPresent9: Result=DEVICELOST");
             }
             return hr;
         }
@@ -89,6 +85,17 @@ namespace BaseHook
             }
 
             InitImGuiStyle();
+
+            // Configure multi-viewport if enabled
+            ImGuiIO& io = ImGui::GetIO();
+            if (WindowedMode::IsMultiViewportEnabled())
+            {
+                io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+                // Borderless, always-on-top viewport windows (like native ImGui windows)
+                io.ConfigViewportsNoDecoration = true;
+                io.ConfigViewportsNoTaskBarIcon = true;
+            }
+
             ImGui_ImplWin32_Init(Data::hWindow);
             ImGui_ImplDX9_Init(pDevice);
         }
@@ -120,6 +127,14 @@ namespace BaseHook
 
             WindowedMode::TickDX9State();
 
+            // Sync multi-viewport runtime flag
+            ImGuiIO& io = ImGui::GetIO();
+            if (WindowedMode::IsMultiViewportEnabled()) {
+                io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+            }
+            else
+                io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
+
             ImGui_ImplDX9_NewFrame();
 
             Data::bCallingImGui = true;
@@ -146,6 +161,13 @@ namespace BaseHook
             // Standard ImGui_ImplDX9 is usually robust enough for EndScene.
             ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 
+            // Multi-viewport: update and render platform windows
+            if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+            {
+                ImGui::UpdatePlatformWindows();
+                ImGui::RenderPlatformWindowsDefault();
+            }
+
             Data::bIsRendering = false;
 
             return Data::oEndScene(pDevice);
@@ -160,6 +182,9 @@ namespace BaseHook
             D3DPRESENT_PARAMETERS params = *pPresentationParameters;
             D3DPRESENT_PARAMETERS* pParamsToUse = pPresentationParameters;
 
+            // Track if we applied resolution override so we don't corrupt game's internal state
+            bool appliedResolutionOverride = false;
+
             if (pPresentationParameters)
             {
                 if (WindowedMode::ShouldHandle() && params.BackBufferWidth == 0 && params.BackBufferHeight == 0 && WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent)
@@ -172,6 +197,7 @@ namespace BaseHook
                 {
                     params.BackBufferWidth = WindowedMode::g_State.overrideWidth;
                     params.BackBufferHeight = WindowedMode::g_State.overrideHeight;
+                    appliedResolutionOverride = true;
                 }
 
                 LOG_INFO("hkReset: Windowed=%d, Size=%dx%d", pPresentationParameters->Windowed, params.BackBufferWidth, params.BackBufferHeight);
@@ -201,7 +227,9 @@ namespace BaseHook
             
             if (SUCCEEDED(hr))
             {
-                if (pPresentationParameters && pParamsToUse == &params) {
+                // Only write back if we didn't apply resolution override
+                // This preserves the game's original resolution state
+                if (pPresentationParameters && pParamsToUse == &params && !appliedResolutionOverride) {
                     *pPresentationParameters = params;
                 }
 
@@ -229,6 +257,9 @@ namespace BaseHook
 
                 if (WindowedMode::ShouldHandle())
                     WindowedMode::Apply(Data::hWindow);
+
+                if (WindowedMode::IsMultiViewportEnabled())
+                    WindowedMode::RefreshPlatformWindows();
             }
                 
             return hr;
@@ -242,6 +273,9 @@ namespace BaseHook
             D3DPRESENT_PARAMETERS* pParamsToUse = pPresentationParameters;
             D3DDISPLAYMODEEX* pFullscreenModeToUse = pFullscreenDisplayMode;
 
+            // Track if we applied resolution override so we don't corrupt game's internal state
+            bool appliedResolutionOverride = false;
+
             if (pPresentationParameters)
             {
                 if (WindowedMode::ShouldHandle() && params.BackBufferWidth == 0 && params.BackBufferHeight == 0 && WindowedMode::g_State.resizeBehavior == WindowedMode::ResizeBehavior::ScaleContent)
@@ -254,6 +288,7 @@ namespace BaseHook
                 {
                     params.BackBufferWidth = WindowedMode::g_State.overrideWidth;
                     params.BackBufferHeight = WindowedMode::g_State.overrideHeight;
+                    appliedResolutionOverride = true;
                 }
 
                 LOG_INFO("hkResetEx: Windowed=%d, Size=%dx%d", pPresentationParameters->Windowed, params.BackBufferWidth, params.BackBufferHeight);
@@ -283,7 +318,9 @@ namespace BaseHook
 
             if (SUCCEEDED(hr))
             {
-                if (pPresentationParameters && pParamsToUse == &params) {
+                // Only write back if we didn't apply resolution override
+                // This preserves the game's original resolution state
+                if (pPresentationParameters && pParamsToUse == &params && !appliedResolutionOverride) {
                     *pPresentationParameters = params;
                 }
 
@@ -310,6 +347,9 @@ namespace BaseHook
 
                 if (WindowedMode::ShouldHandle())
                     WindowedMode::Apply(Data::hWindow);
+
+                if (WindowedMode::IsMultiViewportEnabled())
+                    WindowedMode::RefreshPlatformWindows();
             }
 
             return hr;

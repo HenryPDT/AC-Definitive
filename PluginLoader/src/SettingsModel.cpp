@@ -27,6 +27,8 @@ void SettingsModel::LoadFromConfig()
     m_draft.overrideResX = PluginLoaderConfig::g_Config.OverrideResX.get();
     m_draft.overrideResY = PluginLoaderConfig::g_Config.OverrideResY.get();
     m_draft.alwaysOnTop = PluginLoaderConfig::g_Config.AlwaysOnTop.get();
+    m_draft.enableMultiViewport = PluginLoaderConfig::g_Config.EnableMultiViewport.get();
+    m_draft.multiViewportScaling = (int)PluginLoaderConfig::g_Config.MultiViewportScaling.get();
 
     m_draft.targetMonitor = PluginLoaderConfig::g_Config.TargetMonitor.get();
     if (m_draft.targetMonitor == -1)
@@ -61,6 +63,8 @@ void SettingsModel::UpdateSnapshot()
     m_appliedWindowSettings.overrideResX = m_draft.overrideResX;
     m_appliedWindowSettings.overrideResY = m_draft.overrideResY;
     m_appliedWindowSettings.alwaysOnTop = m_draft.alwaysOnTop;
+    m_appliedWindowSettings.enableMultiViewport = m_draft.enableMultiViewport;
+    m_appliedWindowSettings.multiViewportScaling = m_draft.multiViewportScaling;
     m_appliedWindowSettings.enableFpsLimit = m_draft.enableFpsLimit;
     m_appliedWindowSettings.fpsLimit = m_draft.fpsLimit;
     m_appliedWindowSettings.renderInBackground = m_draft.renderInBackground;
@@ -68,7 +72,7 @@ void SettingsModel::UpdateSnapshot()
 
 void SettingsModel::DrawInputSection()
 {
-    const char* items[] = { "Win32/WndProc", "DirectInput" };
+    const char* items[] = { "DirectInput", "Win32/WndProc" };
     int mode = (int)PluginLoaderConfig::g_Config.ImGuiMouseSource.get();
     if (mode < 0 || mode > 1) mode = 0;
     if (ImGui::Combo("ImGui Mouse Source", &mode, items, IM_ARRAYSIZE(items)))
@@ -123,12 +127,11 @@ void SettingsModel::SyncVirtualResolutionIfNeeded()
         }
     }
 
-    if (m_draggingWindow)
-    {
-        m_draft.windowX = BaseHook::WindowedMode::g_State.windowX;
-        m_draft.windowY = BaseHook::WindowedMode::g_State.windowY;
-        m_draft.targetMonitor = BaseHook::WindowedMode::g_State.targetMonitor;
-    }
+    // Always sync position from g_State to reflect title bar drags or any external window movement
+    // This ensures Apply Changes doesn't reset position to stale values
+    m_draft.windowX = BaseHook::WindowedMode::g_State.windowX;
+    m_draft.windowY = BaseHook::WindowedMode::g_State.windowY;
+    m_draft.targetMonitor = BaseHook::WindowedMode::g_State.targetMonitor;
 }
 
 void SettingsModel::SyncDetectedDisplayStateIfNeeded()
@@ -164,6 +167,12 @@ void SettingsModel::ApplyWindowedModeToRuntime(bool allowFakeReset)
     PluginLoaderConfig::g_Config.OverrideResX = m_draft.overrideResX;
     PluginLoaderConfig::g_Config.OverrideResY = m_draft.overrideResY;
     PluginLoaderConfig::g_Config.AlwaysOnTop = m_draft.alwaysOnTop;
+    PluginLoaderConfig::g_Config.EnableMultiViewport = m_draft.enableMultiViewport;
+    PluginLoaderConfig::g_Config.MultiViewportScaling = (PluginLoaderConfig::ViewportScalingMode)m_draft.multiViewportScaling;
+
+    // Sync multi-viewport to WindowedMode (takes effect on next init)
+    BaseHook::WindowedMode::SetMultiViewportEnabled(m_draft.enableMultiViewport);
+    BaseHook::WindowedMode::SetMultiViewportScalingMode((BaseHook::WindowedMode::ViewportScalingMode)m_draft.multiViewportScaling);
 
     BaseHook::WindowedMode::SetSettings(
         (BaseHook::WindowedMode::Mode)m_draft.windowedMode,
@@ -292,6 +301,51 @@ void SettingsModel::DrawWindowedModeSection()
 
         ImGui::SameLine();
         ImGui::Checkbox("Always On Top", &m_draft.alwaysOnTop);
+
+        ImGui::Checkbox("Enable Multi-Viewport", &m_draft.enableMultiViewport);
+        if (m_draft.enableMultiViewport != m_appliedWindowSettings.enableMultiViewport)
+        {
+            if (m_draft.enableMultiViewport)
+            {
+                // Enabling viewport: save current mode and upgrade if restrictive
+                if (m_draft.cursorClipMode < 2) {
+                    m_savedCursorClipMode = m_draft.cursorClipMode;
+                    m_draft.cursorClipMode = 3; // UnlockWhenMenuOpen
+                }
+            }
+            else
+            {
+                // Disabling viewport: restore saved mode if applicable
+                if (m_savedCursorClipMode >= 0) {
+                    m_draft.cursorClipMode = m_savedCursorClipMode;
+                    m_savedCursorClipMode = -1;
+                }
+            }
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "Allows ImGui windows to be dragged outside the main game window.\n"
+                "Each window becomes a separate OS window.\n"
+                "Requires restart to take effect.\n"
+                "Not available in Exclusive Fullscreen mode."
+            );
+        }
+
+        ImGui::BeginDisabled(!m_draft.enableMultiViewport);
+        const char* scalingModes[] = { "Maintain Absolute Position", "Scale Physical Size" };
+        if (ImGui::Combo("Multi-Viewport Scaling", &m_draft.multiViewportScaling, scalingModes, IM_ARRAYSIZE(scalingModes)))
+        {
+            BaseHook::WindowedMode::SetMultiViewportScalingMode((BaseHook::WindowedMode::ViewportScalingMode)m_draft.multiViewportScaling);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip(
+                "Absolute: Keeps secondary windows in the same spot on your monitor when the game resizes.\n"
+                "Scale: Resizes physical windows to match the game's virtual resolution (prevents visual mismatch)."
+            );
+        }
+        ImGui::EndDisabled();
     }
 
     if (currentScreenMode == 1) // Borderless Fullscreen
@@ -327,8 +381,6 @@ void SettingsModel::DrawWindowedModeSection()
         m_draggingWindow = ImGui::IsItemActive();
         if (m_draggingWindow)
         {
-            m_draft.windowX = BaseHook::WindowedMode::g_State.windowX;
-            m_draft.windowY = BaseHook::WindowedMode::g_State.windowY;
             ImGui::SetTooltip("Dragging: %d, %d", m_draft.windowX, m_draft.windowY);
         }
 
@@ -343,13 +395,30 @@ void SettingsModel::DrawWindowedModeSection()
 
     ImGui::Dummy(ImVec2(0, 5));
     
-            const char* clipModes[] = {
-                "Default",
-                "Force Clip",
-                "Force Unlock",
-                "Unlock on Menu"
-            };
-            ImGui::Combo("Cursor Clipping", &m_draft.cursorClipMode, clipModes, IM_ARRAYSIZE(clipModes));
+    // Default and Force Clip are only available when multi-viewport is disabled
+    if (!m_draft.enableMultiViewport)
+    {
+        const char* clipModes[] = {
+            "Default",
+            "Force Clip",
+            "Force Unlock",
+            "Unlock on Menu"
+        };
+        ImGui::Combo("Cursor Clipping", &m_draft.cursorClipMode, clipModes, IM_ARRAYSIZE(clipModes));
+    }
+    else
+    {
+        ImGui::TextDisabled("Cursor Clipping");
+        ImGui::SameLine();
+        ImGui::TextDisabled("(Viewport requires unlock)");
+
+        const char* unclipModes[] = { "Force Unlock", "Unlock on Menu" };
+        int adjustedMode = m_draft.cursorClipMode - 2; // Map 2,3 to 0,1
+        if (adjustedMode < 0) adjustedMode = 1; // Default to "Unlock on Menu"
+        if (ImGui::Combo("Cursor Clipping (Unlocked)", &adjustedMode, unclipModes, IM_ARRAYSIZE(unclipModes)))
+            m_draft.cursorClipMode = adjustedMode + 2; // Map back to 2,3
+    }
+
     if (ImGui::IsItemHovered()) ImGui::SetTooltip(
         "Default: Game controls cursor clipping.\n"
         "Force Clip: Cursor is trapped inside the window.\n"
@@ -370,7 +439,9 @@ void SettingsModel::DrawWindowedModeSection()
         m_draft.overrideResX != m_appliedWindowSettings.overrideResX ||
         m_draft.overrideResY != m_appliedWindowSettings.overrideResY ||
         m_draft.renderInBackground != m_appliedWindowSettings.renderInBackground ||
-        m_draft.alwaysOnTop != m_appliedWindowSettings.alwaysOnTop;
+        m_draft.alwaysOnTop != m_appliedWindowSettings.alwaysOnTop ||
+        m_draft.enableMultiViewport != m_appliedWindowSettings.enableMultiViewport ||
+        m_draft.multiViewportScaling != m_appliedWindowSettings.multiViewportScaling;
 
     ImGui::Dummy(ImVec2(0, 10));
     if (changed)
@@ -399,6 +470,8 @@ void SettingsModel::DrawWindowedModeSection()
         m_draft.overrideResY = defaults.OverrideResY.get();
         m_draft.alwaysOnTop = defaults.AlwaysOnTop.get();
         m_draft.renderInBackground = defaults.RenderInBackground.get();
+        m_draft.enableMultiViewport = defaults.EnableMultiViewport.get();
+        m_draft.multiViewportScaling = (int)defaults.MultiViewportScaling.get();
     }
 }
 

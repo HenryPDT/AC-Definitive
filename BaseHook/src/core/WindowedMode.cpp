@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cmath>
+#include <imgui_internal.h>
 
 namespace BaseHook
 {
@@ -145,7 +146,7 @@ namespace BaseHook
 
         static bool GetDesktopRectForWindow(HWND hWnd, int& outX, int& outY, int& outW, int& outH)
         {
-            // Use target monitor logic if available
+        // Use target monitor logic if available
             const auto& mons = GetMonitors();
             if (g_State.targetMonitor >= 0 && g_State.targetMonitor < (int)mons.size())
             {
@@ -444,8 +445,8 @@ namespace BaseHook
             // Strip fullscreen/popup styles if not in bordered mode
             if (g_State.activeMode == Mode::BorderlessFullscreen || g_State.activeMode == Mode::Borderless)
             {
-                targetStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-                targetStyle |= WS_POPUP;
+                targetStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+                targetStyle |= WS_SYSMENU | WS_POPUP;
             }
             else if (g_State.activeMode == Mode::Bordered)
             {
@@ -521,15 +522,13 @@ namespace BaseHook
             // For resize decisions, compare against the real physical window rect via the original API if available.
             const RECT& compareRect = (Data::oGetWindowRect ? realRect : currentRect);
             bool posChanged = (compareRect.left != x) || (compareRect.top != y) ||
-                              ((compareRect.right - compareRect.left) != w) ||
-                              ((compareRect.bottom - compareRect.top) != h);
+                               ((compareRect.right - compareRect.left) != w) ||
+                               ((compareRect.bottom - compareRect.top) != h);
 
             if (!styleChanged && !posChanged)
                 return;
             
-            LOG_INFO("WindowedMode::Apply: Applying changes (Style=%d, Pos=%d) to HWND %p", styleChanged, posChanged, hWnd);
-
-            g_State.inInternalChange = true;
+            InternalChangeGuard guard;
 
             if (styleChanged) {
                 SetWindowLong(hWnd, GWL_STYLE, targetStyle);
@@ -540,9 +539,10 @@ namespace BaseHook
             HWND insertAfter = g_State.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
             SetWindowPos(hWnd, insertAfter, x, y, w, h, SWP_FRAMECHANGED | SWP_SHOWWINDOW);
 
-            g_State.inInternalChange = false;
             g_State.isInitialized = true;
-            LOG_INFO("WindowedMode::Apply: Applied to HWND %p", hWnd);
+
+            if (IsMultiViewportEnabled())
+                RefreshPlatformWindows();
         }
         
         void SetSettings(Mode mode, ResizeBehavior resizeBehavior, int x, int y, int w, int h, int monitorIdx, int clipMode, int overrideW, int overrideH, bool alwaysOnTop)
@@ -554,6 +554,12 @@ namespace BaseHook
                 resizeBehavior = ResizeBehavior::ScaleContent;
             }
 
+            // Detect if resolution override is being cleared (set to 0 from non-zero)
+            // If so, we need to trigger a reset to restore game's original resolution
+            const bool wasOverrideActive = g_State.overrideWidth > 0 && g_State.overrideHeight > 0;
+            const bool willOverrideBeActive = overrideW > 0 && overrideH > 0;
+            const bool overrideBeingCleared = wasOverrideActive && !willOverrideBeActive;
+
             g_State.queuedMode = mode;
             g_State.resizeBehavior = resizeBehavior;
             g_State.windowX = x;
@@ -563,6 +569,14 @@ namespace BaseHook
             g_State.overrideWidth = overrideW;
             g_State.overrideHeight = overrideH;
             g_State.alwaysOnTop = alwaysOnTop;
+
+            // If override was cleared, trigger a fake reset to restore game's original resolution
+            if (overrideBeingCleared)
+            {
+                LOG_INFO("SetSettings: Resolution override cleared, triggering reset to restore game resolution.");
+                TriggerFakeReset();
+                return; // Reset will handle everything else
+            }
 
             // If switching between windowed modes, apply immediately
             if (g_State.activeMode != Mode::ExclusiveFullscreen && g_State.queuedMode != Mode::ExclusiveFullscreen)
@@ -714,9 +728,8 @@ namespace BaseHook
                 if (!wasHandling && isHandling)
                 {
                     LOG_INFO("WindowedMode: Transitioning to windowed. Restoring desktop resolution.");
-                    g_State.inInternalChange = true;
+                    InternalChangeGuard guard;
                     ChangeDisplaySettings(NULL, 0);
-                    g_State.inInternalChange = false;
                 }
 
                 // Transitioning FROM Windowed TO Exclusive Fullscreen
@@ -724,7 +737,7 @@ namespace BaseHook
                 if (wasHandling && !isHandling && g_State.hWnd && IsWindow(g_State.hWnd))
                 {
                     LOG_INFO("WindowedMode: Reverting to exclusive fullscreen defaults.");
-                    g_State.inInternalChange = true;
+                    InternalChangeGuard guard;
 
                     DWORD dwStyle = GetWindowLong(g_State.hWnd, GWL_STYLE);
                     DWORD dwExStyle = GetWindowLong(g_State.hWnd, GWL_EXSTYLE);
@@ -736,8 +749,6 @@ namespace BaseHook
                     // Apply without moving/sizing (Game will handle sizing next)
                     SetWindowPos(g_State.hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, 
                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
-
-                    g_State.inInternalChange = false;
                 }
             }
         }
@@ -852,6 +863,8 @@ namespace BaseHook
                 Apply(g_State.hWnd);
             } else {
                 LOG_INFO("Resolution Change Detected: Virtual=%dx%d, Window=%dx%d", width, height, g_State.windowWidth, g_State.windowHeight);
+                if (IsMultiViewportEnabled())
+                    RefreshPlatformWindows();
             }
         }
 
@@ -904,23 +917,55 @@ namespace BaseHook
             }
         }
 
+        void SyncStateFromWindow()
+        {
+            if (!g_State.hWnd || !IsWindow(g_State.hWnd)) return;
+            
+            RECT rect;
+            if (Data::oGetWindowRect)
+                ((GetWindowRect_t)Data::oGetWindowRect)(g_State.hWnd, &rect);
+            else
+                ::GetWindowRect(g_State.hWnd, &rect);
+            
+            // Update state with actual position
+            g_State.windowX = rect.left;
+            g_State.windowY = rect.top;
+            
+            // Also update target monitor if needed
+            HMONITOR hMon = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+            const auto& mons = GetMonitors();
+            for (int i = 0; i < (int)mons.size(); ++i) {
+                if (mons[i].handle == hMon) {
+                    g_State.targetMonitor = i;
+                    break;
+                }
+            }
+            
+            LOG_INFO("SyncStateFromWindow: Updated position to (%d, %d), monitor %d", 
+                     g_State.windowX, g_State.windowY, g_State.targetMonitor);
+        }
+
         bool PhysicalClientToVirtual(HWND hWnd, POINT& pt)
         {
-            if ((!ShouldHandle() && !ShouldApplyResolutionOverride()) || hWnd != g_State.hWnd)
+            if (!ShouldHandle() && !ShouldApplyResolutionOverride())
                 return false;
 
-            RECT clientRect{};
-            if (!GetPhysicalClientRect(hWnd, clientRect))
+            if (hWnd != Data::hWindow && !IsImGuiPlatformWindow(hWnd))
                 return false;
 
-            const int clientW = clientRect.right - clientRect.left;
-            const int clientH = clientRect.bottom - clientRect.top;
+            // Always use the main game window's scale factor for coordinate consistency
+            RECT mainRect{};
+            if (!GetPhysicalClientRect(Data::hWindow, mainRect))
+                return false;
+
+            const int mainW = mainRect.right - mainRect.left;
+            const int mainH = mainRect.bottom - mainRect.top;
             
-            if (clientW <= 0 || clientH <= 0 || g_State.virtualWidth <= 0 || g_State.virtualHeight <= 0)
+            if (mainW <= 0 || mainH <= 0 || g_State.virtualWidth <= 0 || g_State.virtualHeight <= 0)
                 return false;
 
-            pt.x = (LONG)std::lroundf((float)pt.x * ((float)g_State.virtualWidth / (float)clientW));
-            pt.y = (LONG)std::lroundf((float)pt.y * ((float)g_State.virtualHeight / (float)clientH));
+            pt.x = (LONG)std::lroundf((float)pt.x * ((float)g_State.virtualWidth / (float)mainW));
+            pt.y = (LONG)std::lroundf((float)pt.y * ((float)g_State.virtualHeight / (float)mainH));
             return true;
         }
 
@@ -929,89 +974,274 @@ namespace BaseHook
         {
             if (!Data::hWindow) return;
 
+            // Cache metrics
+            RECT mainRect;
+            if (!GetPhysicalClientRect(Data::hWindow, mainRect)) return;
+            
+            POINT offset = { 0, 0 };
+            if (Data::oClientToScreen) ((BOOL(WINAPI*)(HWND, LPPOINT))Data::oClientToScreen)(Data::hWindow, &offset);
+            else ::ClientToScreen(Data::hWindow, &offset);
+
+            ConvertVirtualToPhysical(x, y, w, h, scaleSize, mainRect, offset);
+        }
+
+        void ConvertVirtualToPhysical(int& x, int& y, int& w, int& h, bool scaleSize, const RECT& mainRect, const POINT& offset)
+        {
+            const int mainW = mainRect.right - mainRect.left;
+            const int mainH = mainRect.bottom - mainRect.top;
+
+            if (mainW <= 0 || mainH <= 0 || g_State.virtualWidth <= 0 || g_State.virtualHeight <= 0)
+                return;
+
+            // Virtual Client -> Physical Client
             POINT pt = { x, y };
-            // Virtual Client (Lie Screen) -> Physical Client
-            VirtualClientToPhysical(Data::hWindow, pt);
+            // Manual inline of VirtualClientToPhysical logic using cached rect
+            pt.x = (LONG)std::lroundf((float)pt.x * ((float)mainW / (float)g_State.virtualWidth));
+            pt.y = (LONG)std::lroundf((float)pt.y * ((float)mainH / (float)g_State.virtualHeight));
 
             // Physical Client -> Physical Screen
-            // We need to use the unhooked function to get true physical screen coords
-            if (Data::oClientToScreen)
-                ((BOOL(WINAPI*)(HWND, LPPOINT))Data::oClientToScreen)(Data::hWindow, &pt);
-            else
-                ::ClientToScreen(Data::hWindow, &pt);
+            pt.x += offset.x;
+            pt.y += offset.y;
 
             x = pt.x;
             y = pt.y;
 
             if (scaleSize) {
-                int vW, vH;
-                GetVirtualResolution(vW, vH);
-                RECT rc;
-                GetPhysicalClientRect(Data::hWindow, rc);
-                int pW = rc.right - rc.left;
-                int pH = rc.bottom - rc.top;
-                if (vW > 0 && pW > 0) {
-                    w = (int)std::lroundf((float)w * (float)pW / (float)vW);
-                    h = (int)std::lroundf((float)h * (float)pH / (float)vH);
-                }
+                // Scale dimensions (Virtual -> Physical)
+                w = (int)std::lroundf((float)w * (float)mainW / (float)g_State.virtualWidth);
+                h = (int)std::lroundf((float)h * (float)mainH / (float)g_State.virtualHeight);
             }
         }
 
         void ConvertPhysicalToVirtual(int& x, int& y)
         {
             if (!Data::hWindow) return;
-            POINT pt = { x, y };
-            // Physical Screen -> Physical Client
-            if (Data::oScreenToClient)
-                ((BOOL(WINAPI*)(HWND, LPPOINT))Data::oScreenToClient)(Data::hWindow, &pt);
-            else
-                ::ScreenToClient(Data::hWindow, &pt);
 
-            // Physical Client -> Virtual Client (Lie Screen)
-            PhysicalClientToVirtual(Data::hWindow, pt);
+            RECT mainRect;
+            if (!GetPhysicalClientRect(Data::hWindow, mainRect)) return;
+
+            POINT offset = { 0, 0 };
+            if (Data::oClientToScreen) ((BOOL(WINAPI*)(HWND, LPPOINT))Data::oClientToScreen)(Data::hWindow, &offset);
+            else ::ClientToScreen(Data::hWindow, &offset);
+
+            ConvertPhysicalToVirtual(x, y, mainRect, offset);
+        }
+
+        void ConvertPhysicalToVirtual(int& x, int& y, const RECT& mainRect, const POINT& offset)
+        {
+            const int mainW = mainRect.right - mainRect.left;
+            const int mainH = mainRect.bottom - mainRect.top;
+
+            if (mainW <= 0 || mainH <= 0 || g_State.virtualWidth <= 0 || g_State.virtualHeight <= 0)
+                return;
+
+            // Physical Screen -> Physical Client
+            // Inverse of adding offset
+            POINT pt = { x - offset.x, y - offset.y };
+
+            // Physical Client -> Virtual Client
+            // Inverse scaling
+            pt.x = (LONG)std::lroundf((float)pt.x * ((float)g_State.virtualWidth / (float)mainW));
+            pt.y = (LONG)std::lroundf((float)pt.y * ((float)g_State.virtualHeight / (float)mainH));
+
             x = pt.x;
             y = pt.y;
         }
 
         bool VirtualClientToPhysical(HWND hWnd, POINT& pt)
         {
-            if ((!ShouldHandle() && !ShouldApplyResolutionOverride()) || hWnd != g_State.hWnd)
+            if (!ShouldHandle() && !ShouldApplyResolutionOverride())
+                return false;
+                
+            if (hWnd != Data::hWindow && !IsImGuiPlatformWindow(hWnd))
                 return false;
 
-            RECT clientRect{};
-            if (!GetPhysicalClientRect(hWnd, clientRect))
+            // Always use the main game window's scale factor for coordinate consistency
+            RECT mainRect{};
+            if (!GetPhysicalClientRect(Data::hWindow, mainRect))
                 return false;
 
-            const int clientW = clientRect.right - clientRect.left;
-            const int clientH = clientRect.bottom - clientRect.top;
+            const int mainW = mainRect.right - mainRect.left;
+            const int mainH = mainRect.bottom - mainRect.top;
 
-            if (clientW <= 0 || clientH <= 0 || g_State.virtualWidth <= 0 || g_State.virtualHeight <= 0)
+            if (mainW <= 0 || mainH <= 0 || g_State.virtualWidth <= 0 || g_State.virtualHeight <= 0)
                 return false;
 
-            pt.x = (LONG)std::lroundf((float)pt.x * ((float)clientW / (float)g_State.virtualWidth));
-            pt.y = (LONG)std::lroundf((float)pt.y * ((float)clientH / (float)g_State.virtualHeight));
+            pt.x = (LONG)std::lroundf((float)pt.x * ((float)mainW / (float)g_State.virtualWidth));
+            pt.y = (LONG)std::lroundf((float)pt.y * ((float)mainH / (float)g_State.virtualHeight));
             return true;
         }
 
         LPARAM ScaleMouseMessage(HWND hWnd, UINT uMsg, LPARAM lParam)
         {
-            if ((!ShouldHandle() && !ShouldApplyResolutionOverride())) return lParam;
-            if (hWnd != g_State.hWnd) return lParam;
+            if (!ShouldHandle() && !ShouldApplyResolutionOverride()) return lParam;
+            if (hWnd != Data::hWindow && !IsImGuiPlatformWindow(hWnd)) return lParam;
 
             // Check for client-coordinate mouse messages
-            bool isMouse = (uMsg == WM_MOUSEMOVE ||
+            bool isClientMouse = (uMsg == WM_MOUSEMOVE ||
                 (uMsg >= WM_LBUTTONDOWN && uMsg <= WM_MBUTTONDBLCLK) ||
                 (uMsg >= WM_XBUTTONDOWN && uMsg <= WM_XBUTTONDBLCLK));
 
-            if (!isMouse) return lParam;
+            // Check for non-client (screen coordinate) mouse messages
+            bool isNCMouse = (uMsg == WM_NCMOUSEMOVE);
+
+            if (!isClientMouse && !isNCMouse) return lParam;
 
             // Extract signed 16-bit values manually to avoid windowsx.h dependency
             POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
 
-            if (PhysicalClientToVirtual(hWnd, pt)) {
+            if (isClientMouse) {
+                // Client-area messages: coords are in physical client space
+                if (PhysicalClientToVirtual(hWnd, pt)) {
+                    return MAKELPARAM((short)pt.x, (short)pt.y);
+                }
+            }
+            else if (isNCMouse) {
+                // Non-client messages: coords are in physical screen space
+                // Convert to virtual coords (which is virtual client since virtual window is at 0,0)
+                ConvertPhysicalToVirtual((int&)pt.x, (int&)pt.y);
                 return MAKELPARAM((short)pt.x, (short)pt.y);
             }
             return lParam;
+        }
+
+        bool IsMainViewportWindow(HWND hWnd)
+        {
+            return hWnd == Data::hWindow;
+        }
+
+        bool IsImGuiPlatformWindow(HWND hWnd)
+        {
+            char className[256];
+            if (::GetClassNameA(hWnd, className, sizeof(className)))
+            {
+                return strstr(className, "ImGui Platform") != nullptr;
+            }
+            return false;
+        }
+
+        bool IsMultiViewportEnabled()
+        {
+            // Only allow multi-viewport in windowed modes (not exclusive fullscreen)
+            if (!ShouldHandle())
+                return false;
+            return g_State.enableMultiViewport;
+        }
+
+        void SetMultiViewportEnabled(bool enabled)
+        {
+            g_State.enableMultiViewport = enabled;
+        }
+
+        void SetMultiViewportScalingMode(ViewportScalingMode mode)
+        {
+            g_State.viewportScaling = mode;
+        }
+
+        void RefreshPlatformWindows()
+        {
+            if (!IsMultiViewportEnabled() || !Data::bIsInitialized || !ImGui::GetCurrentContext())
+                return;
+
+            // If ImGui is actively handling a window drag, don't interfere
+            // This prevents the feedback loop causing lag and "stuck at edge" behavior
+            ImGuiContext& g = *ImGui::GetCurrentContext();
+            if (g.MovingWindow != nullptr)
+                return;
+
+            // Cache main window position and scaling ratio to detect changes
+            static RECT lastMainRect = { 0 };
+            static int lastVWidth = 0, lastVHeight = 0;
+
+            RECT currMainRect;
+            if (!GetPhysicalClientRect(Data::hWindow, currMainRect)) return;
+            // Note: currMainRect here is CLIENT rect (0,0 to W,H). We need SCREEN rect for position tracking.
+            
+            RECT currMainScreenRect;
+            if (Data::oGetWindowRect) ((GetWindowRect_t)Data::oGetWindowRect)(Data::hWindow, &currMainScreenRect);
+            else GetWindowRect(Data::hWindow, &currMainScreenRect);
+
+            // Pre-calculate mapping metrics for optimization
+            POINT offset = { 0, 0 };
+            if (Data::oClientToScreen) ((BOOL(WINAPI*)(HWND, LPPOINT))Data::oClientToScreen)(Data::hWindow, &offset);
+            else ::ClientToScreen(Data::hWindow, &offset);
+
+            const int currMainW = currMainRect.right - currMainRect.left;
+            const int currMainH = currMainRect.bottom - currMainRect.top;
+            const int lastMainW = lastMainRect.right - lastMainRect.left;
+            const int lastMainH = lastMainRect.bottom - lastMainRect.top;
+
+            const bool mainMoved = (currMainScreenRect.left != lastMainRect.left || currMainScreenRect.top != lastMainRect.top);
+            const bool mainResized = (currMainW != lastMainW || currMainH != lastMainH);
+            const bool resChanged = (g_State.virtualWidth != lastVWidth || g_State.virtualHeight != lastVHeight);
+
+            if (!mainMoved && !mainResized && !resChanged)
+                return;
+
+            // Determine if we should prioritize Virtual->Physical (scaling/res updates)
+            // or Physical->Virtual (main window movement/repositioning).
+            // If the scale ratio itself changed, we must scale the detached windows physically to match.
+            const bool scaleFactorChanged = (resChanged || mainResized) && (g_State.viewportScaling == ViewportScalingMode::ScalePhysical);
+
+            lastMainRect = currMainScreenRect; // Use Screen Rect for change tracking
+            lastVWidth = g_State.virtualWidth;
+            lastVHeight = g_State.virtualHeight;
+
+            ImGuiPlatformIO& platformIO = ImGui::GetPlatformIO();
+            for (int n = 1; n < platformIO.Viewports.Size; n++)
+            {
+                ImGuiViewport* viewport = platformIO.Viewports[n];
+                if (!viewport->PlatformHandle) continue;
+
+                HWND hWnd = (HWND)viewport->PlatformHandle;
+
+                if (scaleFactorChanged)
+                {
+                    // Scale Physically: Maintain same Virtual Pos/Size, update Physical window to match new scale
+                    int x = (int)viewport->Pos.x;
+                    int y = (int)viewport->Pos.y;
+                    int w = (int)viewport->Size.x;
+                    int h = (int)viewport->Size.y;
+
+                    ConvertVirtualToPhysical(x, y, w, h, true, currMainRect, offset);
+
+                    g_State.inInternalChange = true;
+                    ::SetWindowPos(hWnd, NULL, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+                    g_State.inInternalChange = false;
+                }
+                else
+                {
+                    // Move Virtually: Maintain same Physical Rect, update Virtual coordinates
+                    // (This happens when the main window moves but doesn't change relative scale)
+                    RECT rect;
+                    if (Data::oGetWindowRect) ((GetWindowRect_t)Data::oGetWindowRect)(hWnd, &rect);
+                    else ::GetWindowRect(hWnd, &rect);
+
+                    POINT tl = { rect.left, rect.top };
+                    POINT br = { rect.right, rect.bottom };
+
+                    ConvertPhysicalToVirtual((int&)tl.x, (int&)tl.y, currMainRect, offset);
+                    ConvertPhysicalToVirtual((int&)br.x, (int&)br.y, currMainRect, offset);
+
+                    float newX = (float)tl.x;
+                    float newY = (float)tl.y;
+                    float newW = (float)(br.x - tl.x);
+                    float newH = (float)(br.y - tl.y);
+
+                    // Use a small epsilon to avoid floating point noise from integer scaling
+                    const float eps = 0.01f;
+                    bool posChanged = (std::abs(viewport->Pos.x - newX) > eps || std::abs(viewport->Pos.y - newY) > eps);
+                    bool sizeChanged = (std::abs(viewport->Size.x - newW) > eps || std::abs(viewport->Size.y - newH) > eps);
+
+                    if (posChanged || sizeChanged)
+                    {
+                        viewport->Pos = ImVec2(newX, newY);
+                        viewport->Size = ImVec2(newW, newH);
+                        viewport->PlatformRequestMove = true;
+                        viewport->PlatformRequestResize = true;
+                    }
+                }
+            }
         }
     }
 }

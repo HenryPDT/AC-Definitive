@@ -20,6 +20,8 @@ struct SettingsDraft
     int overrideResX = 0;
     int overrideResY = 0;
     bool alwaysOnTop = false;
+    bool enableMultiViewport = false;
+    int multiViewportScaling = 1; // BaseHook::WindowedMode::ViewportScalingMode::ScalePhysical
 
     // CPU affinity
     uint64_t cpuAffinityMask = 0;
@@ -40,9 +42,6 @@ struct WindowSettingsSnapshot
     int windowedMode = 0;
     int resizeBehavior = 0;
     int windowX = -1;
-    // ...
-    bool enableFpsLimit = false;
-    int fpsLimit = 0;
     int windowY = -1;
     int windowW = 1920;
     int windowH = 1080;
@@ -52,6 +51,10 @@ struct WindowSettingsSnapshot
     int overrideResY = 0;
     bool alwaysOnTop = false;
     bool renderInBackground = false;
+    bool enableMultiViewport = false;
+    int multiViewportScaling = 1;
+    bool enableFpsLimit = false;
+    int fpsLimit = 0;
 };
 
 class SettingsModel
@@ -80,6 +83,7 @@ private:
     SettingsDraft m_draft;
     WindowSettingsSnapshot m_appliedWindowSettings;
     bool m_draggingWindow = false;
+    int m_savedCursorClipMode = -1; // -1 = not saved
     uint64_t m_systemAffinityMask = 0;
     uint64_t m_lastAppliedAffinity = 0;
 
