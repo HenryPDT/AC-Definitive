@@ -21,6 +21,14 @@ namespace BaseHook
             // This ensures ImGui and the Game receive coordinates matching the render resolution.
             lParam = WindowedMode::ScaleMouseMessage(hWnd, uMsg, lParam);
 
+            // Handle window resizing to update virtual monitor bounds logic
+            if (uMsg == WM_SIZE && hWnd == Data::hWindow)
+            {
+                int width = LOWORD(lParam);
+                int height = HIWORD(lParam);
+                WindowedMode::NotifyWindowResize(width, height);
+            }
+
             // [FIX] Force Capture for ImGui Viewport Dragging
             // We do this globally here because it must happen regardless of whether input
             // is fed to ImGui via Win32 messages or DirectInput.

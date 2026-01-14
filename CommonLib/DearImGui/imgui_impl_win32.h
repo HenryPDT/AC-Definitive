@@ -51,4 +51,12 @@ IMGUI_IMPL_API float    ImGui_ImplWin32_GetDpiScaleForMonitor(void* monitor); //
 // - Use together with e.g. clearing your framebuffer with zero-alpha.
 IMGUI_IMPL_API void     ImGui_ImplWin32_EnableAlphaCompositing(void* hwnd);   // HWND hwnd
 
+// Coordinate conversion callback for custom resolution scaling (optional)
+// - Use to convert physical screen coordinates to virtual coordinates for multi-viewport support
+// - Pass a function that converts physical screen X,Y to virtual coordinates
+// - This is called during monitor enumeration to ensure viewport positions align with virtual coordinate space
+typedef void (*ImGui_ImplWin32_CoordConversionFunc)(int* x, int* y);
+IMGUI_IMPL_API void     ImGui_ImplWin32_SetPhysicalToVirtualCallback(ImGui_ImplWin32_CoordConversionFunc func);
+
 #endif // #ifndef IMGUI_DISABLE
+

@@ -87,6 +87,9 @@ namespace BaseHook
 
             // True when user is dragging via OS title bar (WM_ENTERSIZEMOVE to WM_EXITSIZEMOVE)
             bool isSystemMoving = false;
+
+            // Deferred application flag
+            std::atomic<bool> pendingApply = false;
         };
         extern State g_State;
 
@@ -155,6 +158,7 @@ namespace BaseHook
         void GetVirtualResolution(int& width, int& height);
         void GetWindowResolution(int& width, int& height);
         void NotifyResolutionChange(int width, int height);
+        void NotifyWindowResize(int width, int height);
         void GetFixedDesktopResolution(int& w, int& h);
 
         // Monitor Management

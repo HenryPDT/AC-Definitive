@@ -222,6 +222,15 @@ namespace BaseHook::Hooks
             }
 
             ImGui_ImplWin32_Init(Data::hWindow);
+            
+            // Register coordinate conversion callback for multi-viewport monitor bounds
+            if (WindowedMode::ShouldHandle())
+            {
+                ImGui_ImplWin32_SetPhysicalToVirtualCallback([](int* x, int* y) {
+                    WindowedMode::ConvertPhysicalToVirtual(*x, *y);
+                });
+            }
+            
             ImGui_ImplDX10_Init(Data::pDevice10);
             CreateRenderTarget10(pSwapChain);
             Data::bIsInitialized = true;
@@ -252,6 +261,15 @@ namespace BaseHook::Hooks
         }
 
         ImGui_ImplWin32_Init(Data::hWindow);
+        
+        // Register coordinate conversion callback for multi-viewport monitor bounds
+        if (WindowedMode::ShouldHandle())
+        {
+            ImGui_ImplWin32_SetPhysicalToVirtualCallback([](int* x, int* y) {
+                WindowedMode::ConvertPhysicalToVirtual(*x, *y);
+            });
+        }
+        
         ImGui_ImplDX11_Init(Data::pDevice11, Data::pContext11);
         CreateRenderTarget11(pSwapChain);
         Data::bIsInitialized = true;

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <imgui_internal.h>
+#include "imgui_impl_win32.h"
 
 namespace BaseHook
 {
@@ -250,6 +251,10 @@ namespace BaseHook
 
         void TickDXGIState()
         {
+            if (g_State.pendingApply.exchange(false)) {
+                Apply(g_State.hWnd);
+            }
+
             // Only meaningful for DXGI (DX10/DX11).
             bool exclusive = false;
             const bool haveState = QueryExclusiveFullscreen(exclusive);
@@ -306,6 +311,10 @@ namespace BaseHook
 
         void TickDX9State()
         {
+            if (g_State.pendingApply.exchange(false)) {
+                Apply(g_State.hWnd);
+            }
+
             // DX9 equivalent of TickDXGIState
             bool exclusive = false;
             const bool haveState = QueryExclusiveFullscreen(exclusive);
@@ -630,6 +639,9 @@ namespace BaseHook
                     g_State.windowHeight = g_State.virtualHeight;
                 }
             } else {
+                if (g_State.windowWidth != w || g_State.windowHeight != h) {
+                    LOG_INFO("SetSettings: Updating window size to %dx%d (from %dx%d)", w, h, g_State.windowWidth, g_State.windowHeight);
+                }
                 g_State.windowWidth = w;
                 g_State.windowHeight = h;
             }
@@ -637,7 +649,11 @@ namespace BaseHook
             // Only apply if we are currently handling the window
             if (ShouldHandle())
             {
-                Apply(g_State.hWnd);
+                if (g_State.isDragging) {
+                    g_State.pendingApply = true;
+                } else {
+                    Apply(g_State.hWnd);
+                }
             }
         }
 
@@ -865,6 +881,33 @@ namespace BaseHook
                 LOG_INFO("Resolution Change Detected: Virtual=%dx%d, Window=%dx%d", width, height, g_State.windowWidth, g_State.windowHeight);
                 if (IsMultiViewportEnabled())
                     RefreshPlatformWindows();
+            }
+
+            // Force ImGui to refresh monitor bounds with new resolution scaling
+            // Re-setting the callback triggers WantUpdateMonitors = true in the backend
+            if (IsMultiViewportEnabled()) {
+                ImGui_ImplWin32_SetPhysicalToVirtualCallback([](int* x, int* y) {
+                    ConvertPhysicalToVirtual(*x, *y);
+                });
+            }
+        }
+
+        void NotifyWindowResize(int width, int height)
+        {
+            if (width <= 0 || height <= 0) return;
+
+            bool changed = (g_State.windowWidth != width || g_State.windowHeight != height);
+            
+            g_State.windowWidth = width;
+            g_State.windowHeight = height;
+
+            // Force ImGui to refresh monitor bounds with new resolution scaling
+            // We do this ALWAYS on WM_SIZE because even if g_State matches (e.g. updated elsewhere by SetSettings),
+            // ImGui might still have stale monitor bounds using the old scaling.
+            if (IsMultiViewportEnabled()) {
+                ImGui_ImplWin32_SetPhysicalToVirtualCallback([](int* x, int* y) {
+                    ConvertPhysicalToVirtual(*x, *y);
+                });
             }
         }
 

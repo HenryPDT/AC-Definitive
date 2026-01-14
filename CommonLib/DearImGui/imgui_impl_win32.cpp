@@ -457,17 +457,51 @@ static void ImGui_ImplWin32_UpdateGamepads(ImGuiIO& io)
 #endif
 }
 
+// Callback for physical-to-virtual coordinate conversion (set by BaseHook for resolution scaling)
+static ImGui_ImplWin32_CoordConversionFunc g_PhysicalToVirtualCallback = nullptr;
+
+void ImGui_ImplWin32_SetPhysicalToVirtualCallback(ImGui_ImplWin32_CoordConversionFunc func)
+{
+    g_PhysicalToVirtualCallback = func;
+    
+    // Force monitors to be re-enumerated with new callback on next NewFrame
+    // This is needed because monitors are first enumerated during Init before callback is set
+    ImGui_ImplWin32_Data* bd = ImGui_ImplWin32_GetBackendData();
+    if (bd)
+        bd->WantUpdateMonitors = true;
+}
+
 static BOOL CALLBACK ImGui_ImplWin32_UpdateMonitors_EnumFunc(HMONITOR monitor, HDC, LPRECT, LPARAM)
 {
     MONITORINFO info = {};
     info.cbSize = sizeof(MONITORINFO);
     if (!::GetMonitorInfo(monitor, &info))
         return TRUE;
+    
+    // Get physical coordinates
+    int mainLeft = info.rcMonitor.left;
+    int mainTop = info.rcMonitor.top;
+    int mainRight = info.rcMonitor.right;
+    int mainBottom = info.rcMonitor.bottom;
+    int workLeft = info.rcWork.left;
+    int workTop = info.rcWork.top;
+    int workRight = info.rcWork.right;
+    int workBottom = info.rcWork.bottom;
+    
+    // Convert to virtual coordinates if callback is set
+    if (g_PhysicalToVirtualCallback)
+    {
+        g_PhysicalToVirtualCallback(&mainLeft, &mainTop);
+        g_PhysicalToVirtualCallback(&mainRight, &mainBottom);
+        g_PhysicalToVirtualCallback(&workLeft, &workTop);
+        g_PhysicalToVirtualCallback(&workRight, &workBottom);
+    }
+    
     ImGuiPlatformMonitor imgui_monitor;
-    imgui_monitor.MainPos = ImVec2((float)info.rcMonitor.left, (float)info.rcMonitor.top);
-    imgui_monitor.MainSize = ImVec2((float)(info.rcMonitor.right - info.rcMonitor.left), (float)(info.rcMonitor.bottom - info.rcMonitor.top));
-    imgui_monitor.WorkPos = ImVec2((float)info.rcWork.left, (float)info.rcWork.top);
-    imgui_monitor.WorkSize = ImVec2((float)(info.rcWork.right - info.rcWork.left), (float)(info.rcWork.bottom - info.rcWork.top));
+    imgui_monitor.MainPos = ImVec2((float)mainLeft, (float)mainTop);
+    imgui_monitor.MainSize = ImVec2((float)(mainRight - mainLeft), (float)(mainBottom - mainTop));
+    imgui_monitor.WorkPos = ImVec2((float)workLeft, (float)workTop);
+    imgui_monitor.WorkSize = ImVec2((float)(workRight - workLeft), (float)(workBottom - workTop));
     imgui_monitor.DpiScale = ImGui_ImplWin32_GetDpiScaleForMonitor(monitor);
     imgui_monitor.PlatformHandle = (void*)monitor;
     if (imgui_monitor.DpiScale <= 0.0f)
