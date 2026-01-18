@@ -8,6 +8,7 @@
 #include <CpuAffinity.h>
 #include <filesystem>
 #include "log.h"
+#include <AutoAssemblerKinda.h>
 
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
@@ -30,6 +31,9 @@ public:
 
         LOG_INFO("[ACR EaglePatch] Initializing...");
 
+        // Perform a global pass to resolve all hooks/patterns
+        HookManager::ResolveAll();
+
         uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
         auto version = ACR::DetectVersion(baseAddr);
 
@@ -38,10 +42,8 @@ public:
 
         if (version != ACREaglePatch::GameVersion::Unknown)
         {
-            if (g_config.EnableXInput)
-                ACREaglePatch::InitController(baseAddr, version, g_config.KeyboardLayout);
-            if (g_config.SkipIntroVideos)
-                ACREaglePatch::InitSkipIntro(baseAddr, version);
+            ACREaglePatch::InitController(baseAddr, version, g_config.EnableXInput, g_config.KeyboardLayout);
+            ACREaglePatch::InitSkipIntro(baseAddr, version, g_config.SkipIntroVideos);
 
             if (g_config.FixCpuAffinity)
             {

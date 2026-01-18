@@ -207,6 +207,11 @@ namespace AutoAssemblerKinda
         if (requireUnique) {
             auto allMatches = ScanAll(module, signature, allSections);
             if (allMatches.size() == 1) return allMatches[0];
+            if (allMatches.size() > 1) {
+                LOG_ERROR("Multiple matches (%zu) found for signature: %.*s", allMatches.size(), (int)signature.length(), signature.data());
+            } else {
+                LOG_ERROR("Pattern not found for signature: %.*s", (int)signature.length(), signature.data());
+            }
             return { 0, false };
         }
 

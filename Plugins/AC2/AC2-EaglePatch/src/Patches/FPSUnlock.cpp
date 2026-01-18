@@ -29,16 +29,14 @@ namespace AC2EaglePatch
 
     void InitFPSUnlock(uintptr_t baseAddr, GameVersion version, bool enable)
     {
-        if (!HookManager::Resolve(&FPSUnlock_Descriptor)) {
-            LOG_INFO("[EaglePatch] FPS Unlock pattern not found!");
+        if (!FPSUnlock_Descriptor.IsResolved()) {
             return;
         }
 
         if (enable) {
             HookManager::Install(&FPSUnlock_Descriptor);
+            LOG_INFO("[EaglePatch] FPS Unlock applied.");
         }
-
-        LOG_INFO("[EaglePatch] FPS Unlock initialized.");
     }
 
     void SetFPSUnlock(bool enable)

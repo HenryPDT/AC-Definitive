@@ -128,18 +128,16 @@ namespace AC2EaglePatch
     void InitGraphics(uintptr_t baseAddr, GameVersion version, bool shadows, bool drawDistance)
     {
         // --- Resolve Shadow Map ---
-        if (!HookManager::Resolve(&ShadowMap_Descriptor)) {
-            LOG_INFO("[EaglePatch] Graphics: ShadowMap pattern not found!");
+        if (!ShadowMap_Descriptor.IsResolved()) {
             return;
         }
 
         // --- Resolve Draw Distance Hooks ---
-        if (!HookManager::Resolve(&ClothHook_Descriptor) ||
-            !HookManager::Resolve(&ForceLod0_Descriptor) ||
-            !HookManager::Resolve(&CheckCharAddr_Desc) ||
-            !HookManager::Resolve(&CheckIsCharacter_Descriptor))
+        if (!ClothHook_Descriptor.IsResolved() ||
+            !ForceLod0_Descriptor.IsResolved() ||
+            !CheckCharAddr_Desc.IsResolved() ||
+            !CheckIsCharacter_Descriptor.IsResolved())
         {
-            LOG_INFO("[EaglePatch] Graphics: Draw distance patterns not found!");
             return;
         }
 
@@ -147,7 +145,7 @@ namespace AC2EaglePatch
         ForceLod0_Return = CheckCharAddr_Desc.GetAddress();
 
         // Create LodLevel skip patch
-        if (HookManager::Resolve(&LodLevelSkipLoc_Desc)) {
+        if (LodLevelSkipLoc_Desc.IsResolved()) {
             s_LodSkipPatch = new AutoAssembleWrapper<LodLevelSkipPatch>(LodLevelSkipLoc_Desc.GetAddress());
         }
 
@@ -157,6 +155,7 @@ namespace AC2EaglePatch
 
         if (shadows) {
             HookManager::Install(&ShadowMap_Descriptor);
+            LOG_INFO("[EaglePatch] Shadow Map resolution improved.");
         }
 
         if (drawDistance) {
@@ -164,9 +163,8 @@ namespace AC2EaglePatch
             HookManager::Install(&ForceLod0_Descriptor);
             HookManager::Install(&CheckIsCharacter_Descriptor);
             if (s_LodSkipPatch) s_LodSkipPatch->Activate();
+            LOG_INFO("[EaglePatch] Draw distance improvements applied.");
         }
-
-        LOG_INFO("[EaglePatch] Graphics fixes initialized.");
     }
 
     void SetShadowMapResolution(bool enable)

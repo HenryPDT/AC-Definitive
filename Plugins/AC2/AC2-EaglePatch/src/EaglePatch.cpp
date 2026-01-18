@@ -11,6 +11,7 @@
 #include <CpuAffinity.h>
 #include <filesystem>
 #include "log.h"
+#include <AutoAssemblerKinda.h>
 
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
@@ -33,6 +34,9 @@ public:
 
         LOG_INFO("[AC2 EaglePatch] Initializing...");
 
+        // Perform a global pass to resolve all hooks/patterns
+        HookManager::ResolveAll();
+
         uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
         auto version = AC2::DetectVersion(baseAddr);
 
@@ -41,17 +45,14 @@ public:
 
         if (version != AC2EaglePatch::GameVersion::Unknown)
         {
-            if (g_config.EnableXInput)
-                AC2EaglePatch::InitController(baseAddr, version, g_config.KeyboardLayout);
+            AC2EaglePatch::InitController(baseAddr, version, g_config.EnableXInput, g_config.KeyboardLayout);
 
-            if (g_config.SkipIntroVideos)
-                AC2EaglePatch::InitSkipIntro(baseAddr, version);
+            AC2EaglePatch::InitSkipIntro(baseAddr, version, g_config.SkipIntroVideos);
 
             AC2EaglePatch::InitFPSUnlock(baseAddr, version, g_config.UnlockFPS);
             AC2EaglePatch::InitGraphics(baseAddr, version, g_config.ImproveShadowMapResolution, g_config.ImproveDrawDistance);
 
-            if (g_config.UPlayItems)
-                AC2EaglePatch::InitUplayBonus(baseAddr, version);
+            AC2EaglePatch::InitUplayBonus(baseAddr, version, g_config.UPlayItems);
 
             if (g_config.FixCpuAffinity)
             {

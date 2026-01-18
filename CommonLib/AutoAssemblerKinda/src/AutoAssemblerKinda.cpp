@@ -809,9 +809,14 @@ bool DataPatch::Resolve(bool requireUnique) {
     auto result = m_Desc.moduleName
         ? PatternScanner::ScanModule(m_Desc.moduleName, m_Desc.aobSignature, m_Desc.allSections, requireUnique)
         : PatternScanner::ScanMain(m_Desc.aobSignature, m_Desc.allSections, requireUnique);
-    if (!result) return false;
+    if (!result) {
+        LOG_ERROR("[DataPatch] %s: Pattern not found! (Module: %s)", m_Desc.name, m_Desc.moduleName ? m_Desc.moduleName : "Main");
+        return false;
+    }
     m_ResolvedAddress = result.Offset(m_Desc.aobOffset).m_Address;
     m_Resolved = true;
+
+    LOG_INFO("[DataPatch] %s: Resolved at 0x%p", m_Desc.name, (void*)m_ResolvedAddress);
     return true;
 }
 
@@ -891,7 +896,7 @@ bool AOBAddress::Resolve(bool requireUnique) {
         *m_Desc.targetPtr = m_ResolvedAddress;
     }
     
-    LOG_INFO("[AOBAddress] %s: Resolved to %p", m_Desc.name, (void*)m_ResolvedAddress);
+    LOG_INFO("[AOBAddress] %s: Resolved to 0x%p", m_Desc.name, (void*)m_ResolvedAddress);
     return true;
 }
 

@@ -45,21 +45,22 @@ namespace AC2EaglePatch
         }
     }
 
-    void InitUplayBonus(uintptr_t baseAddr, GameVersion version)
+    void InitUplayBonus(uintptr_t baseAddr, GameVersion version, bool enable)
     {
         // First resolve the function pointer
-        if (!HookManager::Resolve(&UplayEndClass_Desc)) {
-            LOG_INFO("[EaglePatch] UplayBonus: Failed to resolve EndClass function!");
+        if (!UplayEndClass_Desc.IsResolved()) {
             return;
         }
 
         // Then resolve and install the hook
-        if (!HookManager::Resolve(&UplayBonus_Descriptor)) {
-            LOG_INFO("[EaglePatch] UplayBonus: Pattern NOT found!");
+        if (!UplayBonus_Descriptor.IsResolved()) {
             return;
         }
 
-        HookManager::Install(&UplayBonus_Descriptor);
-        LOG_INFO("[EaglePatch] Uplay Bonuses enabled.");
+        if (enable)
+        {
+            HookManager::Install(&UplayBonus_Descriptor);
+            LOG_INFO("[EaglePatch] Uplay Bonuses enabled.");
+        }
     }
 }

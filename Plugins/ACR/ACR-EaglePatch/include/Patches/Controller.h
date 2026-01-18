@@ -7,7 +7,7 @@
 
 namespace ACREaglePatch
 {
-    void InitController(uintptr_t baseAddr, GameVersion version, int keyboardLayout);
+    void InitController(uintptr_t baseAddr, GameVersion version, bool enable, int keyboardLayout);
     void UpdateKeyboardLayout(int keyboardLayout);
 
     // --- Game Structures (scimitar) ---

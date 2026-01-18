@@ -4,5 +4,5 @@
 
 namespace AC1EaglePatch
 {
-    void InitSkipIntro(uintptr_t baseAddr, GameVersion version);
+    void InitSkipIntro(uintptr_t baseAddr, GameVersion version, bool enable);
 }

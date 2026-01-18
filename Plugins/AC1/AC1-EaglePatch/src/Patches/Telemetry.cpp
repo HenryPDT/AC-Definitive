@@ -17,14 +17,16 @@ namespace AC1EaglePatch
 
     DEFINE_DATA_PATCH(Telemetry, "67 63 6F 6E 6E 65 63 74 2E 75 62 69 2E 63 6F 6D", 0, (uint8_t)0x00, true);
 
-    void InitTelemetry(uintptr_t baseAddr, GameVersion version)
+    void InitTelemetry(uintptr_t baseAddr, GameVersion version, bool enable)
     {
-        if (!HookManager::Resolve(&Telemetry_Descriptor)) {
-            LOG_INFO("[EaglePatch] Telemetry: Pattern NOT found!");
+        if (!Telemetry_Descriptor.IsResolved()) {
             return;
         }
 
-        HookManager::Install(&Telemetry_Descriptor);
-        LOG_INFO("[EaglePatch] Telemetry patch applied.");
+        if (enable)
+        {
+            HookManager::Install(&Telemetry_Descriptor);
+            LOG_INFO("[EaglePatch] Telemetry patch applied.");
+        }
     }
 }

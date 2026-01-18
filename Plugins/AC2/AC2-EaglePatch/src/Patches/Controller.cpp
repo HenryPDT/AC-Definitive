@@ -326,18 +326,23 @@ namespace AC2EaglePatch
         }
     }
 
-    void InitController(uintptr_t baseAddr, GameVersion version, int keyboardLayout)
+    void InitController(uintptr_t baseAddr, GameVersion version, bool enable, int keyboardLayout)
     {
         // Resolve all addresses and hooks
-        if (!HookManager::ResolveAndInstallAll())
+        if (!AddXenonJoy_Descriptor.IsResolved() || !PadProxyPC_Descriptor.IsResolved())
         {
              LOG_ERROR("[EaglePatch] Failed to resolve Controller patches!");
              return;
         }
 
-        NEEDED_KEYBOARD_SET = keyboardLayout;
+        if (enable)
+        {
+            HookManager::Install(&AddXenonJoy_Descriptor);
+            HookManager::Install(&PadProxyPC_Descriptor);
+            LOG_INFO("[EaglePatch] Controller patches applied.");
+        }
 
-        LOG_INFO("[EaglePatch] Controller patches applied.");
+        NEEDED_KEYBOARD_SET = keyboardLayout;
     }
 
     void UpdateKeyboardLayout(int keyboardLayout)

@@ -4,5 +4,5 @@
 
 namespace AC1EaglePatch
 {
-    void InitTelemetry(uintptr_t baseAddr, GameVersion version);
+    void InitTelemetry(uintptr_t baseAddr, GameVersion version, bool enable);
 }

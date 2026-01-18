@@ -10,6 +10,7 @@
 #include <CpuAffinity.h>
 #include <filesystem>
 #include "log.h"
+#include <AutoAssemblerKinda.h>
 
 // Define the global loader reference here
 const PluginLoaderInterface* g_loader_ref = nullptr;
@@ -32,6 +33,9 @@ public:
 
         LOG_INFO("[AC1 EaglePatch] Initializing...");
 
+        // Perform a global pass to resolve all hooks/patterns
+        HookManager::ResolveAll();
+
         uintptr_t baseAddr = (uintptr_t)GetModuleHandleA(NULL);
         auto version = AC1::DetectVersion(baseAddr);
 
@@ -40,16 +44,13 @@ public:
 
         if (version != AC1EaglePatch::GameVersion::Unknown)
         {
-            if (g_config.EnableXInput)
-                AC1EaglePatch::InitController(baseAddr, version, g_config.KeyboardLayout);
+            AC1EaglePatch::InitController(baseAddr, version, g_config.EnableXInput, g_config.KeyboardLayout);
 
-            if (g_config.SkipIntroVideos)
-                AC1EaglePatch::InitSkipIntro(baseAddr, version);
+            AC1EaglePatch::InitSkipIntro(baseAddr, version, g_config.SkipIntroVideos);
 
             AC1EaglePatch::InitGraphics(baseAddr, version, g_config.MultisamplingFix, g_config.D3D10_RemoveDuplicateResolutions);
 
-            if (g_config.DisableTelemetry)
-                AC1EaglePatch::InitTelemetry(baseAddr, version);
+            AC1EaglePatch::InitTelemetry(baseAddr, version, g_config.DisableTelemetry);
 
             if (g_config.FixCpuAffinity)
             {

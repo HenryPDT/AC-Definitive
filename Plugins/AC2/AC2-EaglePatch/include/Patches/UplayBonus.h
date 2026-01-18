@@ -4,5 +4,5 @@
 
 namespace AC2EaglePatch
 {
-    void InitUplayBonus(uintptr_t baseAddr, GameVersion version);
+    void InitUplayBonus(uintptr_t baseAddr, GameVersion version, bool enable);
 }

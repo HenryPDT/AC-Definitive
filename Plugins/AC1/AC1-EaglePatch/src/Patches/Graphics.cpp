@@ -142,18 +142,29 @@ namespace AC1EaglePatch
         // 1. MSAA Fix
         if (enableMSAAFix)
         {
-            HookManager::Install(&MSAA_Patch1_Descriptor);
-            HookManager::Install(&MSAA_Hook_Descriptor);
-            HookManager::Install(&MSAA_Patch3_Descriptor);
+            if (MSAA_Patch1_Descriptor.IsResolved() && 
+                MSAA_Hook_Descriptor.IsResolved() && 
+                MSAA_Patch3_Descriptor.IsResolved())
+            {
+                HookManager::Install(&MSAA_Patch1_Descriptor);
+                HookManager::Install(&MSAA_Hook_Descriptor);
+                HookManager::Install(&MSAA_Patch3_Descriptor);
+                LOG_INFO("[EaglePatch] MSAA fixes applied.");
+            }
         }
 
         // 2. DX10 Resolution Fix
         if (fixDX10Resolution && version == GameVersion::Version1)
         {
-            HookManager::Install(&DX10_Patch1_Descriptor);
-            HookManager::Install(&DX10_Patch2_Descriptor);
-            HookManager::Install(&DX10_Hook_Descriptor);
-            LOG_INFO("[EaglePatch] Graphics fixes applied (DX10).");
+            if (DX10_Patch1_Descriptor.IsResolved() && 
+                DX10_Patch2_Descriptor.IsResolved() && 
+                DX10_Hook_Descriptor.IsResolved())
+            {
+                HookManager::Install(&DX10_Patch1_Descriptor);
+                HookManager::Install(&DX10_Patch2_Descriptor);
+                HookManager::Install(&DX10_Hook_Descriptor);
+                LOG_INFO("[EaglePatch] Graphics fixes applied (DX10).");
+            }
         }
     }
 }
