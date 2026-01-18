@@ -9,6 +9,7 @@
 #include "Game/Components/BipedComponent.h"
 #include "Game/Managers/MissionTimer.h"
 #include "Game/Managers/TimeOfDayManager.h"
+#include "Game/Bink.h"
 #include "Game/Managers/CSrvPlayerHealth.h"
 #include "Core/Constants.h"
 #include "Trainer.h"
@@ -29,12 +30,17 @@ namespace Hooks
     AC2::CSrvPlayerHealth* captured_pHealth = nullptr;
     AC2::MapManager* captured_pMapManager = nullptr;
     static void* captured_pNotoriety = nullptr;
+    static AC2::Bink* captured_pBink = nullptr;
     static void* captured_pFreeRoam = nullptr;
     static void* captured_pMapManage = nullptr;
     static void* captured_pFreeCamera = nullptr;
+    static void* captured_pBinkFile = nullptr; // Raw ESI pointer from Bink hook
     static void* captured_pFreeCam = nullptr;
     static void* captured_pDayTimeMgr = nullptr;
-    
+    static uint32_t g_BinkUpdateCounter = 0;
+    static uint32_t g_LastBinkCounter = 0;
+    static DWORD g_LastBinkUpdateTick = 0;
+
     // Camera fly mode state
     static int nFreeRoamTarget = 0;
     __declspec(align(16)) float g_CameraPos[4] = { 0, 0, 0, 0 };
@@ -45,6 +51,7 @@ namespace Hooks
     static bool bIgnoreFallDamage = false;
     static bool bGodMode = false;
     static bool bDisableNotoriety = false;
+    static bool bSkipCredits = false;
     static float g_TimeScale = AC2::Constants::TIME_DELAY_DEFAULT;
     __declspec(align(16)) float g_SpeedVector[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
@@ -319,6 +326,67 @@ namespace Hooks
     }
 
     // =========================================================
+    // 14. Bink Video Skip Hook
+    // =========================================================
+    DEFINE_AOB_HOOK_MOD(BinkVideoHook, "binkw32.dll",
+        "8B 44 24 04 68 07 03 00 00",
+        0, 9
+    );
+
+    HOOK_IMPL(BinkVideoHook) {
+        __asm {
+            mov eax, [esp + 0x04]
+            mov [captured_pBink], eax
+            mov [captured_pBinkFile], esi
+            lock inc [g_BinkUpdateCounter]
+            push 0x307
+            jmp [BinkVideoHook_Return]
+        }
+    }
+
+    // =========================================================
+    // 15. Skip Credits Hook 1 (Init)
+    // =========================================================
+    DEFINE_AOB_HOOK(SkipCreditsHook1,
+        "89 45 E4 C7 45 E8 00 00 00 00 66 83 7D 10 01",
+        0, 10
+    );
+
+    HOOK_IMPL(SkipCreditsHook1) {
+        __asm {
+            cmp [bSkipCredits], 1
+            jne SkipCred1Exit
+            mov byte ptr [edi + 0x30C], 1
+        SkipCred1Exit:
+            mov [ebp - 0x1C], eax
+            mov dword ptr [ebp - 0x18], 0
+            jmp [SkipCreditsHook1_Return]
+        }
+    }
+
+    // =========================================================
+    // 16. Skip Credits Hook 2 (Loop/Reset)
+    // =========================================================
+    // Scan for the start of the block, then hook at +0x1F
+    DEFINE_AOB_HOOK(SkipCreditsHook2,
+        "1B C0 83 D8 FF 85 C0 ?? ?? 8B 8F", // Fixed: replaced * with ?? for parser compatibility
+        0x1F, 9                 // Offset +0x1F, Stolen: movzx(4) + and(5) = 9 bytes
+    );
+
+    HOOK_IMPL(SkipCreditsHook2) {
+        __asm {
+            movzx eax, word ptr [ecx + 0x0E]
+            and eax, 0x3FFF
+            cmp [bSkipCredits], 1
+            jne SkipCred2Exit
+            xor eax, eax
+            mov byte ptr [edi + 0x30C], 0
+        SkipCred2Exit:
+            jmp [SkipCreditsHook2_Return]
+        }
+    }
+
+    // =========================================================
     // Initialize
     // =========================================================
     void Initialize()
@@ -349,6 +417,19 @@ namespace Hooks
         bGodMode = g_config.GodMode;
         bDisableNotoriety = g_config.DisableNotoriety;
         nFreeRoamTarget = g_config.FreeRoamTarget;
+        bSkipCredits = g_config.SkipCredits;
+
+        // Bink Pointer Safety (Timeout)
+        if (captured_pBink) {
+            if (g_BinkUpdateCounter != g_LastBinkCounter) {
+                g_LastBinkCounter = g_BinkUpdateCounter;
+                g_LastBinkUpdateTick = GetTickCount();
+            }
+            else if (GetTickCount() - g_LastBinkUpdateTick > 1000) {
+                captured_pBink = nullptr;
+                captured_pBinkFile = nullptr;
+            }
+        }
 
         float s = g_config.PlayerSpeed;
         g_SpeedVector[0] = s;
@@ -362,6 +443,7 @@ namespace Hooks
         AC2::g_pMissionTimer = g_pTimer;
         AC2::g_pPlayerHealth = captured_pHealth;
         AC2::g_pMapManager = captured_pMapManager;
+        AC2::g_pBink = captured_pBink;
     }
 
     void* GetNotorietyPointer() { return captured_pNotoriety; }
@@ -373,4 +455,5 @@ namespace Hooks
     void* GetFreeCameraObjectPointer() { return captured_pFreeCamera; }
     float* GetCameraPosPointer() { return g_CameraPos; }
     void* GetFreeCamPointer() { return captured_pFreeCam; }
+    void* GetBinkFilePointer() { return captured_pBinkFile; }
 }

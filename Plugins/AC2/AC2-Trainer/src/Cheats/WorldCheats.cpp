@@ -3,6 +3,7 @@
 #include "Game/Managers/MapManager.h"
 #include "Game/Managers/TimeOfDayManager.h"
 #include "Game/Managers/MissionTimer.h"
+#include "Game/Bink.h"
 #include "Core/Constants.h"
 #include "Trainer.h"
 #include "Hooks.h"

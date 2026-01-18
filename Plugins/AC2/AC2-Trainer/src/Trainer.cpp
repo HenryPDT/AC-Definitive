@@ -10,6 +10,7 @@
 #include "Cheats/WorldCheats.h"
 #include "Cheats/TeleportCheats.h"
 #include "Cheats/CharacterCheats.h"
+#include "Cheats/GameFlowCheats.h"
 #include <PluginConfig.h>
 #include <filesystem>
 #include <memory>
@@ -31,6 +32,7 @@ private:
     std::unique_ptr<WorldCheats> m_WorldCheats;
     std::unique_ptr<TeleportCheats> m_TeleportCheats;
     std::unique_ptr<CharacterCheats> m_CharacterCheats;
+    std::unique_ptr<GameFlowCheats> m_GameFlowCheats;
 
 public:
     const char* GetPluginName() override { return "AC2 Trainer"; }
@@ -61,6 +63,7 @@ public:
         m_WorldCheats = std::make_unique<WorldCheats>();
         m_TeleportCheats = std::make_unique<TeleportCheats>();
         m_CharacterCheats = std::make_unique<CharacterCheats>();
+        m_GameFlowCheats = std::make_unique<GameFlowCheats>();
 
         // Apply initial config states if needed
     }
@@ -99,14 +102,14 @@ public:
                 m_WorldCheats->DrawUI();
                 ImGui::EndTabItem();
             }
-
+            
             // Tab 4: Camera & Movement - Teleport, free roam, FOV
             if (ImGui::BeginTabItem("Camera & Movement"))
             {
                 m_TeleportCheats->DrawUI();
                 ImGui::EndTabItem();
             }
-
+            
             // Tab 5: Character - Character switcher
             if (ImGui::BeginTabItem("Character"))
             {
@@ -114,7 +117,14 @@ public:
                 ImGui::EndTabItem();
             }
 
-            // Tab 6: Settings - Keybinds
+            // Tab 6: Game Flow - Skip Bink, credits
+            if (ImGui::BeginTabItem("Game Flow"))
+            {
+                m_GameFlowCheats->DrawUI();
+                ImGui::EndTabItem();
+            }
+
+            // Tab 7: Settings - Keybinds
             if (ImGui::BeginTabItem("Settings"))
             {
                 // Keybinds
@@ -123,6 +133,7 @@ public:
                 ImGui::KeyBindInput("Teleport to Waypoint", g_config.Key_TeleportWaypoint.get());
                 ImGui::KeyBindInput("Save Position", g_config.Key_SavePosition.get());
                 ImGui::KeyBindInput("Restore Position", g_config.Key_RestorePosition.get());
+                ImGui::KeyBindInput("Skip Video", g_config.Key_SkipBink.get());
                 
                 ImGui::Separator();
                 ImGui::TextDisabled("-- Fly Mode Controls --");
@@ -157,6 +168,7 @@ public:
         if (m_InventoryCheats) m_InventoryCheats->Update();
         if (m_WorldCheats) m_WorldCheats->Update();
         if (m_TeleportCheats) m_TeleportCheats->Update();
+        if (m_GameFlowCheats) m_GameFlowCheats->Update();
     }
 };
 

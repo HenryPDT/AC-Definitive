@@ -92,6 +92,26 @@ void TeleportCheats::DrawUI()
         }
     }
 
+    // Predefined Locations Section
+    if (ImGui::CollapsingHeader("Saved Locations", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        static int selectedLoc = 0;
+        static const char* locNames[] = { "Florence", "Venice" };
+        // Coordinates from CE scripts 769_Florence.asm and 2532_Venice.asm
+        static const AC2::Scimitar::Vector3 locCoords[] = {
+            { 59.195f, -80.671f, 30.0f },   // Florence
+            { 100.0f,  -132.0f,  30.0f }    // Venice
+        };
+
+        ImGui::Combo("Location", &selectedLoc, locNames, IM_ARRAYSIZE(locNames));
+
+        if (ImGui::Button("Teleport##Predefined"))
+        {
+            if (selectedLoc >= 0 && selectedLoc < IM_ARRAYSIZE(locCoords))
+                TeleportTo(locCoords[selectedLoc]);
+        }
+    }
+
     // Free Roam Section
     if (ImGui::CollapsingHeader("Free Roam", ImGuiTreeNodeFlags_DefaultOpen))
     {

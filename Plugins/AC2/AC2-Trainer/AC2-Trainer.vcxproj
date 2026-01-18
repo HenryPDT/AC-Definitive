@@ -93,6 +93,7 @@
     <ClCompile Include="src\Cheats\InventoryCheats.cpp" />
     <ClCompile Include="src\Cheats\PlayerCheats.cpp" />
     <ClCompile Include="src\Cheats\WorldCheats.cpp" />
+    <ClCompile Include="src\Cheats\GameFlowCheats.cpp" />
     <ClCompile Include="src\Cheats\TeleportCheats.cpp" />
     <ClCompile Include="src\Cheats\CharacterCheats.cpp" />
     <ClCompile Include="src\Trainer.cpp" />
@@ -103,6 +104,7 @@
     <ClInclude Include="include\Cheats\InventoryCheats.h" />
     <ClInclude Include="include\Cheats\PlayerCheats.h" />
     <ClInclude Include="include\Cheats\WorldCheats.h" />
+    <ClInclude Include="include\Cheats\GameFlowCheats.h" />
     <ClInclude Include="include\Cheats\TeleportCheats.h" />
     <ClInclude Include="include\Cheats\CharacterCheats.h" />
     <ClInclude Include="include\Trainer.h" />

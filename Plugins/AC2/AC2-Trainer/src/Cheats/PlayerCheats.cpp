@@ -52,6 +52,14 @@ void PlayerCheats::DrawPlayerStatus()
 
         ImGui::Checkbox("Ignore Fall Damage", &g_config.IgnoreFallDamage.get());
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Prevents death from falling.");
+
+        ImGui::Spacing();
+        if (ImGui::Button("Desynchronize (Kill Player)"))
+        {
+            auto* health = AC2::GetPlayerHealth();
+            if (health) health->m_Desync = true;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Instantly desynchronizes the player to reload checkpoint.");
     }
 
     // Status Section

@@ -23,6 +23,9 @@ namespace Trainer
         PROPERTY(GlobalSpeed, float, Serialization::NumericAdapter_template<float>, 1.0f)  // SpeedSystem global speed
         PROPERTY(PlayerScale, float, Serialization::NumericAdapter_template<float>, 1.0f)
         
+        // Misc
+        PROPERTY(SkipCredits, bool, Serialization::BooleanAdapter, false)
+
         // World / Time
         PROPERTY(TimeOfDay, float, Serialization::NumericAdapter_template<float>, 12.0f)
         PROPERTY(PauseTime, bool, Serialization::BooleanAdapter, false)
@@ -38,6 +41,7 @@ namespace Trainer
         PROPERTY(Key_TeleportWaypoint, KeyBind, Serialization::KeyBindAdapter, KeyBind('T', false, true, false)) // Shift+T
         PROPERTY(Key_SavePosition, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_F11))
         PROPERTY(Key_RestorePosition, KeyBind, Serialization::KeyBindAdapter, KeyBind(VK_F12))
+        PROPERTY(Key_SkipBink, KeyBind, Serialization::KeyBindAdapter, KeyBind('V', true, false, false)) // Ctrl+V
         PROPERTY(Key_FlyForward, KeyBind, Serialization::KeyBindAdapter, KeyBind('W'))
         PROPERTY(Key_FlyBackward, KeyBind, Serialization::KeyBindAdapter, KeyBind('S'))
         PROPERTY(Key_FlyLeft, KeyBind, Serialization::KeyBindAdapter, KeyBind('A'))

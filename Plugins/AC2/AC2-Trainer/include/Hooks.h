@@ -33,4 +33,7 @@ namespace Hooks
     // Default: 48.0 = normal speed, higher = slower, lower = faster
     void SetTimeScale(float scale);
     float GetTimeScale();
+
+    // Get the raw pointer to the Bink file wrapper (captured from esi)
+    void* GetBinkFilePointer();
 }

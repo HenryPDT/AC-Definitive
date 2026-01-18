@@ -8,6 +8,7 @@
 #include "Game/Managers/CSrvPlayerHealth.h"
 #include "Game/Camera.h"
 #include "Game/SpeedSystem.h"
+#include "Game/Bink.h"
 #include "Game/Managers/MissionTimer.h"
 #include "PatternScanner.h"
 #include <windows.h>
@@ -20,6 +21,7 @@ namespace AC2
     MissionTimer* g_pMissionTimer = nullptr;
     MapManager* g_pMapManager = nullptr;
     CSrvPlayerHealth* g_pPlayerHealth = nullptr;
+    Bink* g_pBink = nullptr;
 
     BhvAssassin* GetBhvAssassin()
     {
@@ -153,5 +155,10 @@ namespace AC2
     {
         // Populated by Hooks::MissionTimerHook
         return g_pMissionTimer;
+    }
+
+    Bink* GetBink()
+    {
+        return g_pBink;
     }
 }

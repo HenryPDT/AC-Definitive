@@ -646,9 +646,11 @@ NakedHook::~NakedHook() {
 bool NakedHook::Resolve(bool requireUnique) {
     if (m_Resolved) return true;
     
-    auto result = PatternScanner::ScanMain(m_Desc.aobSignature, false, requireUnique);
+    auto result = m_Desc.moduleName 
+        ? PatternScanner::ScanModule(m_Desc.moduleName, m_Desc.aobSignature, false, requireUnique)
+        : PatternScanner::ScanMain(m_Desc.aobSignature, false, requireUnique);
     if (!result) {
-        LOG_ERROR("[NakedHook] %s: Pattern not found! %s", m_Desc.name, m_Desc.aobSignature);
+        LOG_ERROR("[NakedHook] %s: Pattern not found! %s (Module: %s)", m_Desc.name, m_Desc.aobSignature, m_Desc.moduleName ? m_Desc.moduleName : "Main");
         return false;
     }
     
@@ -738,9 +740,11 @@ CCodeHook::~CCodeHook() {
 bool CCodeHook::Resolve(bool requireUnique) {
     if (m_Resolved) return true;
 
-    auto result = PatternScanner::ScanMain(m_Desc.aobSignature, false, requireUnique);
+    auto result = m_Desc.moduleName
+        ? PatternScanner::ScanModule(m_Desc.moduleName, m_Desc.aobSignature, false, requireUnique)
+        : PatternScanner::ScanMain(m_Desc.aobSignature, false, requireUnique);
     if (!result) {
-        LOG_ERROR("[CCodeHook] %s: Pattern not found!", m_Desc.name);
+        LOG_ERROR("[CCodeHook] %s: Pattern not found! (Module: %s)", m_Desc.name, m_Desc.moduleName ? m_Desc.moduleName : "Main");
         return false;
     }
     m_ResolvedAddress = result.Offset(m_Desc.aobOffset).m_Address;
@@ -802,7 +806,9 @@ DataPatch::DataPatch(const Descriptor& desc) : m_Desc(desc) {}
 
 bool DataPatch::Resolve(bool requireUnique) {
     if (m_Resolved) return true;
-    auto result = PatternScanner::ScanMain(m_Desc.aobSignature, m_Desc.allSections, requireUnique);
+    auto result = m_Desc.moduleName
+        ? PatternScanner::ScanModule(m_Desc.moduleName, m_Desc.aobSignature, m_Desc.allSections, requireUnique)
+        : PatternScanner::ScanMain(m_Desc.aobSignature, m_Desc.allSections, requireUnique);
     if (!result) return false;
     m_ResolvedAddress = result.Offset(m_Desc.aobOffset).m_Address;
     m_Resolved = true;

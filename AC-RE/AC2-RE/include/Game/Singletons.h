@@ -14,6 +14,7 @@ namespace AC2
     class CharacterAI;
     class MissionTimer;
     class SharedData;
+    class Bink;
 
     BhvAssassin* GetBhvAssassin();
     Entity* GetPlayer();
@@ -23,6 +24,7 @@ namespace AC2
     // Globals set by hooks
     // These are captured dynamically when the game runs specific code paths
     extern CSrvPlayerHealth* g_pPlayerHealth;
+    extern Bink* g_pBink;
     extern MapManager* g_pMapManager;
     extern MissionTimer* g_pMissionTimer;
 
@@ -35,6 +37,7 @@ namespace AC2
     MapManager* GetMapManager();
     SpeedSystem* GetSpeedSystem();
     MissionTimer* GetMissionTimer();
+    Bink* GetBink();
     void** GetCharacterSave();
 }
 

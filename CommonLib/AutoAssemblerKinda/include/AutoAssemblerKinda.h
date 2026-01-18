@@ -833,6 +833,7 @@ public:
     
     struct Descriptor {
         const char* name;
+        const char* moduleName;
         const char* aobSignature;
         intptr_t aobOffset;
         size_t stolenBytes;
@@ -876,6 +877,7 @@ public:
 
     struct Descriptor {
         const char* name;
+        const char* moduleName;
         const char* aobSignature;
         intptr_t aobOffset;
         size_t stolenBytes;
@@ -918,6 +920,7 @@ class DataPatch : public IHook {
 public:
     struct Descriptor {
         const char* name;
+        const char* moduleName;
         const char* aobSignature;
         intptr_t aobOffset;
         const uint8_t* data;
@@ -1027,7 +1030,17 @@ private:
     static uintptr_t HookName##_Return = 0; \
     static void HookName##_Func(); \
     static NakedHook::Descriptor HookName##_Config = { \
-        #HookName, Signature, Offset, StolenBytes, &HookName##_Func, &HookName##_Return \
+        #HookName, nullptr, Signature, Offset, StolenBytes, &HookName##_Func, &HookName##_Return \
+    }; \
+    static NakedHook HookName##_Descriptor(HookName##_Config); \
+    static bool HookName##_Reg = HookName##_Descriptor.RegisterSelf(); \
+    static void HookName##_Func()
+
+#define DEFINE_AOB_HOOK_MOD(HookName, ModuleName, Signature, Offset, StolenBytes) \
+    static uintptr_t HookName##_Return = 0; \
+    static void HookName##_Func(); \
+    static NakedHook::Descriptor HookName##_Config = { \
+        #HookName, ModuleName, Signature, Offset, StolenBytes, &HookName##_Func, &HookName##_Return \
     }; \
     static NakedHook HookName##_Descriptor(HookName##_Config); \
     static bool HookName##_Reg = HookName##_Descriptor.RegisterSelf(); \
@@ -1039,6 +1052,8 @@ private:
 // They should use DEFINE_CPP_HOOK.
 #define DEFINE_AOB_HOOK(HookName, Signature, Offset, StolenBytes) \
     static_assert(false, "DEFINE_AOB_HOOK (Naked) is not supported on x64. Use DEFINE_CPP_HOOK instead.");
+#define DEFINE_AOB_HOOK_MOD(HookName, ModuleName, Signature, Offset, StolenBytes) \
+    static_assert(false, "DEFINE_AOB_HOOK_MOD (Naked) is not supported on x64. Use DEFINE_CPP_HOOK_MOD instead.");
 #endif
 
 // -------------------------------------------------------------------------
@@ -1055,7 +1070,17 @@ private:
 #define DEFINE_CPP_HOOK(HookName, Signature, Offset, StolenBytes, ...) \
     static void HookName##_Func(AllRegisters* params); \
     static CCodeHook::Descriptor HookName##_Config = { \
-        #HookName, Signature, Offset, StolenBytes, &HookName##_Func, \
+        #HookName, nullptr, Signature, Offset, StolenBytes, &HookName##_Func, \
+        (true, ##__VA_ARGS__) \
+    }; \
+    static CCodeHook HookName##_Descriptor(HookName##_Config); \
+    static bool HookName##_Reg = HookName##_Descriptor.RegisterSelf(); \
+    static void HookName##_Func(AllRegisters* params)
+
+#define DEFINE_CPP_HOOK_MOD(HookName, ModuleName, Signature, Offset, StolenBytes, ...) \
+    static void HookName##_Func(AllRegisters* params); \
+    static CCodeHook::Descriptor HookName##_Config = { \
+        #HookName, ModuleName, Signature, Offset, StolenBytes, &HookName##_Func, \
         (true, ##__VA_ARGS__) \
     }; \
     static CCodeHook HookName##_Descriptor(HookName##_Config); \
@@ -1073,7 +1098,16 @@ private:
 #define DEFINE_DATA_PATCH(PatchName, Signature, Offset, Value, ...) \
     static const auto PatchName##_Value = Value; \
     static DataPatch::Descriptor PatchName##_Config = { \
-        #PatchName, Signature, Offset, (const uint8_t*)&PatchName##_Value, sizeof(PatchName##_Value), \
+        #PatchName, nullptr, Signature, Offset, (const uint8_t*)&PatchName##_Value, sizeof(PatchName##_Value), \
+        (false, ##__VA_ARGS__)  /* Default false, or use provided value */ \
+    }; \
+    static DataPatch PatchName##_Descriptor(PatchName##_Config); \
+    static bool PatchName##_Reg = PatchName##_Descriptor.RegisterSelf()
+
+#define DEFINE_DATA_PATCH_MOD(PatchName, ModuleName, Signature, Offset, Value, ...) \
+    static const auto PatchName##_Value = Value; \
+    static DataPatch::Descriptor PatchName##_Config = { \
+        #PatchName, ModuleName, Signature, Offset, (const uint8_t*)&PatchName##_Value, sizeof(PatchName##_Value), \
         (false, ##__VA_ARGS__)  /* Default false, or use provided value */ \
     }; \
     static DataPatch PatchName##_Descriptor(PatchName##_Config); \
